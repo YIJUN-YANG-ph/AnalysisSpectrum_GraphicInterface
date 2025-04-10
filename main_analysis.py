@@ -265,9 +265,10 @@ class MainWindow(QMainWindow):
     def load_csv(self,file_name = None):
         # If no file is specified, open a dialog to select a CSV
         if file_name is None:
+            # enable the file dialog to select multiple files
             options = QFileDialog.Options()
-            file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "All Files (*);;CSV Files (*.csv)", options=options)
-
+            file_name, _ = QFileDialog.getOpenFileNames(self, "Open CSV File", "", "All Files (*);;CSV Files (*.csv)", options=options)
+        
         if file_name:
 
             file_base_name = os.path.basename(file_name)
@@ -297,6 +298,7 @@ class MainWindow(QMainWindow):
             self.measurement_data = T
     def load_offset(self):
             """Load offset CSV file and plot it in grey."""
+            
             options = QFileDialog.Options()
             file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "All Files (*);;CSV Files (*.csv)", options=options)
     

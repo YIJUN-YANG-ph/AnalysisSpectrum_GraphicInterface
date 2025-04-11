@@ -57,7 +57,7 @@ def linear2dB(signal_linear):
         Ref:
     """
     signal_dB =10*np.log10(signal_linear)# the signal_dB is transfered to linear signal
-    return signal_linear
+    return signal_dB 
 
 def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None)->pd.DataFrame:
     """ 
@@ -631,7 +631,7 @@ def analysis_main(T,
     '''
     a new figure to show the group delay from FSR
     '''
-    Fig_GD, (ax_GD) = plt.subplots(nrows = 1,ncols=1,figsize = [5,3])
+    Fig_GD, (ax_GD) = plt.subplots(nrows = 1,ncols=1,figsize = [7,3])
     ax_TR = ax_GD.twinx() # a twin x axis for corresponded T_T and T_R
     GD = 1/FSR['FSR_Hz']# second
     ax_GD.plot(FSR['frequency_Hz_FSR'],GD * 1e12,".",label = 'group delay')
@@ -647,7 +647,45 @@ def analysis_main(T,
         T_R = Addition_dict['T_R']
         ax_TR.plot(T_T['nu_Hz'],T_T['T_linear'],'--',label = 'T_T',color = 'grey',alpha = 0.5)
         ax_TR.plot(T_R['nu_Hz'],T_R['T_linear'],'--',label = 'T_R',color = 'orange',alpha = 0.5)
+        # the total collected energy
+        # choose one point every 10 points
+        downsampled_nu_Hz = T_T['nu_Hz'][::70]
+        downsampled_total_T_linear = (T_T['T_linear'] + T_R['T_linear'])[::70]
+        ax_TR.plot(downsampled_nu_Hz,downsampled_total_T_linear,'-',label = 'total',color = 'black',alpha = 0.5)
+        # ax_TR.plot(T_T['nu_Hz'],T_T['T_linear']+T_R['T_linear'],'-',label = 'total',color = 'green',alpha = 0.5)    
         ax_TR.set_ylim([-0.05,1.05])
+    # add a fitting to the group delay
+    isFitting = True
+    if isFitting:
+        # if Addition_dict has the key Params_GD
+        if 'Params_GD' in Addition_dict.keys():
+            Params_GD = Addition_dict['Params_GD']
+            mask = (FSR['frequency_Hz_FSR'] <= wl2nu(Params_GD['wl_fit_start'])) & (FSR['frequency_Hz_FSR'] >= wl2nu(Params_GD['wl_fit_end']))
+        else:
+            mask = (FSR['frequency_Hz_FSR'] <= wl2nu(1515)) & (FSR['frequency_Hz_FSR'] >= wl2nu(1565))
+        filtered_nu = FSR['frequency_Hz_FSR'][mask]
+        filtered_GD_r = GD[mask]
+
+        # Perform linear fit
+        fit_params = np.polyfit(filtered_nu, filtered_GD_r, 1)  # Linear fit (degree=1)
+        fit_line = np.polyval(fit_params, filtered_nu)
+        fit_endpoints = np.polyval(fit_params, [filtered_nu.iloc[0], filtered_nu.iloc[-1]]) # in seconds
+        slope_ps_nm =(fit_endpoints[1]-fit_endpoints[0]) * 1e12 / (nu2wl(filtered_nu.iloc[-1]) - nu2wl(filtered_nu.iloc[0])) # in ps/nm
+
+        # Calculate residuals
+        residuals = (filtered_GD_r - fit_line)*1e12
+
+        # Calculate standard error of the estimate
+        n = len(filtered_GD_r)
+        standard_error = np.sqrt(np.sum(residuals**2) / (n - 2))
+        ax_GD.plot(filtered_nu, fit_line*1e12, 'r--',
+                   label=f'Linear Fit:\n{np.real(fit_params[0]*1e12*1e12):.3f} $ps^2$ \n STD: {np.real(standard_error):.3f} ps \n slope: {slope_ps_nm:.3f} ps/nm')
+        # print(slope_ps_nm)
+        # add legend
+        # ax2.legend()
+    ax_GD.legend(**Param_legend)
+    # title
+    ax_GD.set_title(Title)
     Fig_GD.tight_layout()
     '''
     a new figure to shown fitting for each resonances
@@ -959,7 +997,7 @@ if __name__ == "__main__":
     FileName = 'ChirpPer0.46Len600Square_R.txt'
 
 
-    FileName = 'MZI_P0.46_W1.25_Wend_3_L600_BP1_R.txt'
+    FileName = 'MZI_P0.46_W1.25_Wend_3_L300_BP1_R.txt'
     # T = load_data(FileName,range_wl=[1500,1574])
     # FileName = '/Users/yangyijun/Downloads/Measures_Yijun/Ring50GC_A1.csv'
     try:
@@ -969,8 +1007,8 @@ if __name__ == "__main__":
         print('Loading data fails!\n')
 
     '''Add the transmission and reflection of pulse compressor'''
-    FileName_Transmission = 'PC_P0.46_W1.25_Wend_3_L600_BP1_T.txt'
-    FileName_Reflection = 'PC_P0.46_W1.25_Wend_3_L600_BP1_R.txt'
+    FileName_Transmission = 'PC_P0.46_W1.25_Wend_3_L300_BP1_T.txt'
+    FileName_Reflection = 'PC_P0.46_W1.25_Wend_3_L300_BP1_R.txt'
     T_T = load_data(FileName_Transmission,range_wl=Param_RingResonator['range_wl'],wl_name='wavelength',data_name='transmission')
     T_R = load_data(FileName_Reflection,range_wl=Param_RingResonator['range_wl'],wl_name='wavelength',data_name='transmission')    
 

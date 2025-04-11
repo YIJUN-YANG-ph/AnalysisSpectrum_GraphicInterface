@@ -47,6 +47,7 @@ from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
 
 import pandas as pd
+from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, 
                              QPushButton, QFileDialog, QHBoxLayout, QGridLayout,
                              QLineEdit, QLabel)
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
         # Set background to white
         self.plot_widget.setBackground('w')
         #inialize the legend
-        self.legend = self.plot_widget.addLegend(labelTextSize='19pt')
+        self.legend = self.plot_widget.addLegend(labelTextSize='10pt')
         self.set_legend_style()
         
         # Create a second pyQtGraph plot widget, for presenting some simple operation on the spectrum.
@@ -267,10 +268,12 @@ class MainWindow(QMainWindow):
         if file_name is None:
             # enable the file dialog to select multiple files
             options = QFileDialog.Options()
-            file_name, _ = QFileDialog.getOpenFileNames(self, "Open CSV File", "", "All Files (*);;CSV Files (*.csv)", options=options)
-        
-        if file_name:
-
+            file_names, _ = QFileDialog.getOpenFileNames(self, "Open CSV File", "", "All Files (*);;CSV Files (*.csv)", options=options)
+        else:
+            file_names = [file_name]
+        T_s = []
+        # if file_name:
+        for file_name in file_names:
             file_base_name = os.path.basename(file_name)
             '''
             # Check if 'wavelength' and 'transmission' columns are present
@@ -289,13 +292,26 @@ class MainWindow(QMainWindow):
                 T = load_data(file_name,range_wl=None,wl_name='wavelength',data_name='transmission')
             except ValueError:
                 # T = load_data(FileName,range_wl=[1500,1609],wl_name='L',data_name='1')
-                print('Loading data fails!\n')    
-            # Clear any existing plot
-            self.plot_widget.clear()
-            
-            # Plot the data with 'tab:blue' color for the curve
-            self.plot_widget.plot(T['wavelength_nm'],T['T_dB'], pen=pg.mkPen(color=(25, 25, 112),width=2),name=file_base_name)
-            self.measurement_data = T
+                print('Loading data fails!\n')
+            T_s.append(T)   
+
+        # Clear any existing plot
+        self.plot_widget.clear()
+        # plot all dataframe T in T_s on the same plot
+        # Loop through each DataFrame in T_s and plot it, the color should not be the same, the label size should be the same
+        for i, T in enumerate(T_s):
+            # Generate a unique color for each plot
+            color = pg.intColor(i, hues=len(T_s))
+            # Plot the data with the generated color
+            file_base_name = os.path.basename(file_names[i])
+            self.plot_widget.plot(T['wavelength_nm'], T['T_dB'], pen=pg.mkPen(color=color, width=2), name=file_base_name,
+                                  )
+        
+        # # Plot the data with 'tab:blue' color for the curve
+        # self.plot_widget.plot(T['wavelength_nm'],T['T_dB'], pen=pg.mkPen(color=(25, 25, 112),width=2),name=file_base_name,
+        #                       symbolsize = 50)
+        self.measurement_data = T
+        self.measurement_data_s = T_s # a list of dataframes that contains all the datas
     def load_offset(self):
             """Load offset CSV file and plot it in grey."""
             
@@ -311,41 +327,7 @@ class MainWindow(QMainWindow):
                     # Plot the offset in grey
                 self.plot_widget.plot(T['wavelength_nm'],T['T_dB'], pen=pg.mkPen(color='gray', width=2))
                 self.offset_data = T
-    def calculate_difference(self):
-        """Calculate the difference between measurement and offset, plot in a new window."""
-        if self.measurement_data is not None and self.offset_data is not None:
-            # Extract the wavelength and transmission data
-            wavelength_meas = self.measurement_data['wavelength'].values
-            transmission_meas = self.measurement_data['transmission'].values
-
-            wavelength_offset = self.offset_data['wavelength'].values
-            transmission_offset = self.offset_data['transmission'].values
-
-            # Interpolate the offset data to match the measurement wavelength if needed
-            f = interp1d(wavelength_offset, transmission_offset, bounds_error=False, fill_value="extrapolate")
-            interpolated_offset = f(wavelength_meas)
-
-            # Calculate the difference (measurement - offset)
-            result = transmission_meas - interpolated_offset
-
-            # Create a new window for the result plot
-            result_window = QMainWindow()
-            result_window.setWindowTitle('Result Plot')
-            result_window.setGeometry(100, 100, 800, 600)
-
-            # Create a plot widget for the result
-            result_plot_widget = pg.PlotWidget()
-            result_plot_widget.setBackground('w')
-            result_window.setCentralWidget(result_plot_widget)
-
-            # Plot the result in 'red'
-            result_plot_widget.plot(wavelength_meas, result, pen=pg.mkPen(color='r', width=2))
-
-            # Show the result window
-            result_window.show()
-
-            # Keep a reference to the result window so it's not garbage collected
-            self.result_window = result_window
+    
 # =============================================================================
 #     new functions defined by Yijun YANG
 # =============================================================================
@@ -361,44 +343,61 @@ class MainWindow(QMainWindow):
         params = self.retrieve_params()
         range_wl = params['Param_RingResonator_range_wl'].tolist()
         # range_wl
-        if self.measurement_data is not None:
-            # Check if offset_data exists
-            if hasattr(self, 'offset_data') and self.offset_data is not None:
-                # Extract the wavelength and transmission data
-                wavelength_meas = self.measurement_data['wavelength_nm'].values
-                transmission_meas = self.measurement_data['T_linear'].values
-    
-                wavelength_offset = self.offset_data['wavelength_nm'].values
-                transmission_offset = self.offset_data['T_linear'].values
-    
-                # Interpolate the offset data to match the measurement wavelength if needed
-                f = interp1d(wavelength_offset, transmission_offset, bounds_error=False, fill_value="extrapolate")
-                interpolated_offset = f(wavelength_meas)
-    
-                # Calculate the difference (measurement - offset) in dB
-                result = transmission_meas / interpolated_offset
-            else:
-                # If no offset data, use T_linear as result
-                result = self.measurement_data['T_linear'].values
-            result_dB = linear2dB(result)
-            # give the prenoramlised transmission back to measurement_data
-            self.measurement_data['T_dB']=result_dB
-            self.measurement_data['T_linear']=result
+        if self.measurement_data_s is not None:
+            result_offsetRM_s = [] # mesurement - offset, list
+            for measurement in self.measurement_data_s:
+                # Check if offset_data exists
+                if hasattr(self, 'offset_data') and self.offset_data is not None:
+                    # Extract the wavelength and transmission data
+                    wavelength_meas = measurement['wavelength_nm'].values
+                    transmission_meas = measurement['T_linear'].values
+        
+                    wavelength_offset = self.offset_data['wavelength_nm'].values
+                    transmission_offset = self.offset_data['T_linear'].values
+        
+                    # Interpolate the offset data to match the measurement wavelength if needed
+                    f = interp1d(wavelength_offset, transmission_offset, bounds_error=False, fill_value="extrapolate")
+                    interpolated_offset = f(wavelength_meas)
+        
+                    # Calculate the difference (measurement - offset) in dB
+                    result = transmission_meas / interpolated_offset
+                else:
+                    # If no offset data, use T_linear as result
+                    result = measurement['T_linear'].values
+                result_dB = linear2dB(result)
+                # result_offsetRM_s.append(result)# append the linear result
 
-            # Apply the range filter if specified
-            if range_wl is not None:
-                mask = (self.measurement_data['wavelength_nm'].values >= range_wl[0]) & (self.measurement_data['wavelength_nm'].values <= range_wl[1])
-                # Create a new DataFrame with the filtered data and reset index
-                self.T = self.measurement_data[mask].copy().reset_index(drop=True)
-            else:
-                # No range filter, T contains all measurement data
-                # Create a new DataFrame with the filtered data and reset index
-                self.T = self.measurement_data.copy().reset_index(drop=True)
-            
+                # give the prenoramlised transmission back to measurement_data
+                # Have a problem!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                # self.measurement_data['T_dB']=result_dB
+                # self.measurement_data['T_linear']=result
+                measurement_data = measurement.copy()
+                measurement_data['T_dB']=result_dB
+                measurement_data['T_linear']=result
+
+                # Apply the range filter if specified
+                if range_wl is not None:
+                    mask = (measurement_data['wavelength_nm'].values >= range_wl[0]) & (measurement_data['wavelength_nm'].values <= range_wl[1])
+                    # Create a new DataFrame with the filtered data and reset index
+                    self.T = measurement_data[mask].copy().reset_index(drop=True)
+                    result = result.copy()[mask]
+                else:
+                    # No range filter, T contains all measurement data
+                    # Create a new DataFrame with the filtered data and reset index
+                    self.T = measurement_data.copy().reset_index(drop=True)
+
+
+                result_offsetRM_s.append(result)# append the linear result 
             # Clear any existing plot and plot the result within the selected range
             self.plot_widget_operation.clear()
             #pg.PlotWidget() can not handle pd.dataframe, so it has to be convert to np.array
-            self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), self.T['T_linear'].to_numpy(), pen=pg.mkPen(color=(160,32,240), width=2))
+            for i, result in enumerate(result_offsetRM_s):
+                # Generate a unique color for each plot
+                color = pg.intColor(i, hues=len(result_offsetRM_s))
+                # Plot the data with the generated color
+                self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), result, pen=pg.mkPen(color=color, width=2))
+            # self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), self.T['T_linear'].to_numpy(), pen=pg.mkPen(color=(160,32,240), width=2))
     def arrange_wl_range(self):
         params = self.retrieve_params()
         range_wl = params['Param_RingResonator_range_wl'].tolist()
@@ -428,7 +427,13 @@ class MainWindow(QMainWindow):
                 
             
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    # Check if a QApplication instance already exists, if not create one
+    # This is to avoid creating multiple QApplication instances, elsewise kernel wi
+    
+    if not QtWidgets.QApplication.instance():
+        app = QtWidgets.QApplication(sys.argv)
+    else:
+        app = QtWidgets.QApplication.instance() 
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

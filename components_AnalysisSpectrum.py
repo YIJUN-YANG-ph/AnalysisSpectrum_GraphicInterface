@@ -14,10 +14,12 @@ import pandas as pd
 import numpy as np
 import sys
 import matplotlib as mpl
+import warnings
+# warnings.simplefilter('always')
 from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
-
+mpl.use("Qt5Agg")
 
 C = 299792458 #m / s
 def wl2nu(wl):
@@ -251,6 +253,17 @@ def f_locatized(nu_res,signal_res,bounds):
                 https://doi.org/10.1364/OE.381224
         """
         return -A / (1+((lbd-lbd_res)/HWHM)**2) + f_coupler(lbd)
+    # check the bounds, if the lower bound is larger than the upper bound, then swap them
+    if bounds[0][0] > bounds[1][0]:
+        # put a warning message
+        warnings.warn('Lower bound is larger than upper bound for A. Rechoose the fitting parameter.')
+        print('Yijun says: Lower bound is larger than upper bound for A. Rechoose the fitting parameter.')
+        bounds[0][0], bounds[1][0] = bounds[1][0], bounds[0][0]
+    if bounds[0][1] > bounds[1][1]:
+        # put a warning message
+        warnings.warn('Lower bound is larger than upper bound for HWHM. Rechoose the fitting parameter.')
+        print('Yijun says: Lower bound is larger than upper bound for HWHM. Rechoose the fitting parameter.')
+        bounds[0][1], bounds[1][1] = bounds[1][1], bounds[0][1]
     popt, pcov = curve_fit(f_func_Lorentzian,nu_res,signal_res, bounds=bounds)
     return popt, pcov, f_func_Lorentzian,f_coupler
 
@@ -722,6 +735,9 @@ def analysis_main(T,
     '''
     a figure to shown fitting quality for resonances
     '''
+    # a possible problem: the transmission_corrected may have some NaN values, which will cause problems in the fitting.
+    # temporary solution: put NaN values to 0
+    transmission_corrected = np.nan_to_num(transmission_corrected, nan=0.0)
     peaks_f_params,peaks_fitted_points = resonances_fitting(T['wavelength_nm'],transmission_corrected,peaks['idx_peaks'],**Param_peaks_fitting)
     
     Fig_peak_fitting,(ax_pf1,ax_pf2) = plt.subplots(nrows = 2,ncols=1,sharex=True,sharey = False,figsize = [10,6])

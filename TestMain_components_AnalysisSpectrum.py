@@ -25,7 +25,7 @@ if __name__ == "__main__":
     # =============================================================================
     Param_RingResonator = {'diameter':200,
                            'width':1100,
-                           'range_wl':[1530,1540]}
+                           'range_wl':[1500,1640]}
     # Param_RingResonator = {'diameter':200,
     #                        'width':1100,
     #                        'range_wl':[1510,1570]}

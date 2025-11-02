@@ -18,8 +18,12 @@ from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 
+from F_ConvertUnits import wl2nu, nu2wl, dB2linear, linear2dB
+from F_LoadData import load_data
+import scipy.constants as const
 
-C = 299792458 #m / s
+C = const.c  # Speed of light in vacuum (m/s)
+'''
 def wl2nu(wl):
     """ from wavelength scale nm to frequency scale hz
         Comments by Yijun
@@ -118,6 +122,7 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
     })
 
     return T
+'''
 
 def find_peaks_for_FSR(frequency_Hz,transmission_linear,**param_find_peaks):
     """ find peaks for FSR and pepareing for resonances fitting 
@@ -377,7 +382,7 @@ def RemoveOffset_Savgol(wavelength, transmission, idx, window_length=101, polyor
 
     # Step 2: Apply the Savitzky-Golay filter to the data without the resonances
     # Filter only the non-resonance regions
-    transmission_filtered = np.copy(transmission)  # Start with a copy to store the results
+    transmission_filtered = transmission.copy()  # Start with a copy to store the results
     polyorder = int(polyorder)
     window_length = int(window_length)
     transmission_filtered[mask] = savgol_filter(transmission[mask], window_length=window_length, polyorder=polyorder)
@@ -1000,6 +1005,7 @@ if __name__ == "__main__":
     FileName = 'MZI_P0.46_W1.25_Wend_3_L300_BP1_R.txt'
     # T = load_data(FileName,range_wl=[1500,1574])
     # FileName = '/Users/yangyijun/Downloads/Measures_Yijun/Ring50GC_A1.csv'
+    # FileName = 'Ring200_W1100_R100um_G600nm_AfterAnnealing.csv'
     try:
         T = load_data(FileName,range_wl=Param_RingResonator['range_wl'],wl_name='wavelength',data_name='transmission')
     except ValueError:

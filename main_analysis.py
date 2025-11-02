@@ -44,6 +44,7 @@ import ast
 
 import matplotlib as mpl
 from matplotlib import pyplot as plt
+import matplotlib
 from scipy.optimize import curve_fit
 
 import pandas as pd
@@ -429,7 +430,8 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     # Check if a QApplication instance already exists, if not create one
     # This is to avoid creating multiple QApplication instances, elsewise kernel wi
-    
+    matplotlib.use('Qt5Agg')# use the Qt5Agg backend, important
+
     if not QtWidgets.QApplication.instance():
         app = QtWidgets.QApplication(sys.argv)
     else:

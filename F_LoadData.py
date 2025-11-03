@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 from yaml import warnings
-from F_ConvertUnits import wl2nu, dB2linear
+from F_ConvertUnits import wl2nu, nu2wl, dB2linear
 
 def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None)->pd.DataFrame:
     """ 
@@ -70,6 +70,21 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
 
 if __name__ == "__main__":
     # Example usage
-    file_name = r'test_W1100_R100um_G400_AfterAnnealing.csv'
-    T = load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=[1500,1600])
+    # file_name = r'test_W1100_R100um_G400_AfterAnnealing.csv'
+    # T = load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=[1500,1600])
+    # print(T.head())
+
+    # Another example usage, with different column names,
+    # From frequency sweeping measurement
+    file_name = r'D80-G400-W1598.679-0-1.5(241025).txt'
+    T = load_data(file_name, wl_name='frequency', data_name='power1')
+    #change the key names according to the actual file
+    T = T.rename(columns={'wavelength_nm':'nu_Hz', 'nu_Hz':'wavelength_nm',})
+    # convert nu_Hz from THz to Hz
+    T['nu_Hz'] = T['nu_Hz'] * 1e12
+    T['wavelength_nm'] = nu2wl(T['nu_Hz']) # convert to nm
+    import matplotlib.pyplot as plt
+    plt.plot(T['nu_Hz'], T['T_dB'])
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Electrical Power (dB)')
     print(T.head())

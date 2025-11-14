@@ -4,6 +4,7 @@ from F_LoadData import load_data
 from F_ConvertUnits import nu2wl, wl2nu
 import matplotlib
 import matplotlib.pyplot as plt
+from scipy.signal import chirp, find_peaks, peak_widths
 class SingleHighQ():
     def __init__(self):
         self.x_data = np.array([])
@@ -43,7 +44,7 @@ class SingleHighQ():
                         ax.set_ylabel('Electrical Power (dBm)')
                         ax.set_title('Measurement')
                         
-                        print(T.head())
+                        # print(T.head())
 
                     return T
                 except Exception as e:
@@ -90,24 +91,9 @@ class SingleHighQ():
                         ax.set_xlabel('Frequency (Hz)')
                         ax.set_ylabel('Electrical Power (dBm)')
                     
-                    print(T.head())
+                    # print(T.head())
 
                     
-                    # Plot the raw data
-                    # self.plot_data.setData(self.x_data, self.y_data)
-                    # Also plot on the linear scale plot
-                    # y_data_linear = T['T_linear'].values
-                    # self.plot_data_linear.setData(self.x_data, y_data_linear)
-                    '''
-                    # Make intelligent guesses for initial parameters
-                    self.spin_offset.setValue(np.min(self.y_data))
-                    self.spin_amplitude.setValue(np.max(self.y_data) - np.min(self.y_data))
-                    self.spin_center.setValue(self.x_data[np.argmax(self.y_data)])
-                    self.spin_fwhm.setValue((self.x_data.max() - self.x_data.min()) * 0.1) # Guess 10% of range
-                    
-                    # Clear old fit plot
-                    self.plot_fit.setData([], [])
-                    '''
                     return T
                 except Exception as e:
                     print(f"Error loading file: {e}")
@@ -140,15 +126,101 @@ class SingleHighQ():
                 # Fig = plt.figure()
                 # plot
                 # ax = Fig.add_subplot(111)
-                ax.plot(T_corrected['nu_Hz'], T_corrected['T_linear'],label='corrected',alpha=0.7)
+                ax.plot(T_corrected['nu_Hz'], T_corrected['T_linear'],label='corrected T',alpha=0.7)
                 ax.set_xlabel('Frequency (Hz)')
                 ax.set_ylabel('T linear scale')
                 ax.set_title('Corrected optical power after offset removal')
             return T_corrected
-    def Q_FindPeak(self):
-         from F_FindPeaks import FindPeaks
-         return
+    def Q_FindPeak(self,
+                   ax:matplotlib.axes._axes.Axes,
+                   **param_find_peaks)->tuple[np.ndarray,dict,np.ndarray,np.ndarray,np.ndarray]:
+        """
+        Find peaks from the corrected optical transmission T_corrected.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes._axes.Axes, optional, if provided, the peaks will be plotted on this axis.
+        param_find_peaks : dict, optional, {'distance':2000*0.8,'prominence':0.1,'width':5,'rel_height':0.5,}
+        
+        Returns
+        -------
+        idx_peaks : np.ndarray
+            Indices of the detected peaks in T_corrected['T_linear'].
+        properties_peaks : dict
+            Properties of the detected peaks as returned by scipy.signal.find_peaks.
+        right_ips : np.ndarray
+            Right intersection points of the peak widths.
+        left_ips : np.ndarray
+            Left intersection points of the peak widths.
+        width_peaks : np.ndarray
+            Widths of the peaks in the same units as T_corrected['nu_Hz'].
+        """
+        from F_FindPeaks import FindPeaks
+        if param_find_peaks:
+            param_find_peaks = param_find_peaks
+        else:
+            param_find_peaks = {'distance':2000*0.8,
+                                'prominence':0.1,
+                                'width':5,
+                                'rel_height':1,}
+        T_corrected = self.T_corrected
+        idx_peaks, properties_peaks = FindPeaks(T_corrected['T_linear'],**param_find_peaks)
+        promences = properties_peaks['prominences']
+        # Calculate the height of each peak’s contour line and plot the results
+        contour_heights = T_corrected['T_linear'][idx_peaks] + promences
+        # Find all peaks and calculate their widths at the relative height of 0.5 (contour line at half the prominence height) 
+        # and 1 (at the lowest contour line at full prominence height).
+        width_heights = -properties_peaks['width_heights']
+        left_ips = properties_peaks['left_ips'].astype(int)
+        right_ips = properties_peaks['right_ips'].astype(int)
+        width_peaks = T_corrected['nu_Hz'].iloc[right_ips].to_numpy() - T_corrected['nu_Hz'].iloc[left_ips].to_numpy()
+
+        if ax:
+            ax.plot(T_corrected['nu_Hz'][idx_peaks],
+                    T_corrected['T_linear'][idx_peaks],
+                    'o')
+            
+            ax.vlines(x=T_corrected['nu_Hz'][idx_peaks], ymin=contour_heights, ymax=T_corrected['T_linear'][idx_peaks],
+                        linestyles="dashdot", color="C1",label='prominence')
+            
+            ax.hlines(width_heights, T_corrected['nu_Hz'].iloc[left_ips].values, T_corrected['nu_Hz'].iloc[right_ips].values, 
+                        linestyles='--',color="C2",label=f'width {(width_peaks*1e-6).astype(int)} MHz')
+            ax.legend()
          
+        return idx_peaks, properties_peaks, right_ips, left_ips, width_peaks
+    def Q_RemoveOffset_Savgol(self,
+                              idx_peaks:np.ndarray,
+                              points_to_remove:int = 50,
+                              window_length:int=101,
+                              polyorder:int=2,
+                              ax:matplotlib.axes._axes.Axes = None)-> np.ndarray:
+        """ Remove the background offset using Savgol filter.
+        Args:
+           * **idx_peaks** (np.ndarray): the index that indicates where the resonances are.
+           * **points_to_remove** (np.int): the number of points that will be removed around each resonances when doing Savgol filtering.
+           * **window_length** (int): window length for Savgol filter, need to be odd number.
+           * **polyorder** (int): polynomial order for Savgol filter
+        Outputs:
+           * **transmission_corrected** (np.array): the transmission where the background offset is removed. The resonance shapes are kept.
+        """
+        from F_RemoveOffsetSavgol import RemoveOffset_Savgol
+        T_corrected = self.T_corrected
+        T_normalised, offset = RemoveOffset_Savgol(
+            T_corrected['T_linear'].to_numpy(),
+            idx_peaks,
+            points_to_remove=points_to_remove,
+            window_length=window_length,
+            polyorder=polyorder
+        )
+        if ax:
+            # ax.plot(T_corrected['nu_Hz'], T_normalised,label='Savgol corrected T',alpha=0.7)
+
+            # ax = Fig_Savgol.add_subplot(111)
+            # ax.plot(transmission, label='Original Transmission', alpha=0.5, linestyle='--')
+            ax.plot(T_corrected['nu_Hz'], offset, label='Savgol Fitted Offset/filtered', alpha=0.7, linestyle='--')
+            ax.plot(T_corrected['nu_Hz'],T_normalised, label='Corrected Transmission', alpha=1,linestyle='dotted')
+            # ax.set_title('Savgol Filter Background Removal')
+        return T_normalised
          
 if __name__ == "__main__":
      
@@ -166,11 +238,15 @@ if __name__ == "__main__":
     ax_T.legend()
 
     ### find the peak
-    from F_FindPeaks import FindPeaks
-    idx_peaks = FindPeaks(T_corrected['T_linear'])
-    ax_T.plot(T_corrected['nu_Hz'][idx_peaks],
-              T_corrected['T_linear'][idx_peaks],
-              'o')
-    # ax_T.plot(T_corrected['nu_'])
-
-    
+    idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = Q.Q_FindPeak(ax = ax_T)
+    points_to_remove = (right_ips - left_ips).astype(int)
+    ### fit the back ground offset using Savgol filter
+    from F_RemoveOffsetSavgol import RemoveOffset_Savgol
+    T_normalised = Q.Q_RemoveOffset_Savgol(
+        idx_peaks,
+        window_length=20,
+        polyorder=2,
+        points_to_remove=points_to_remove[0]+10,
+        ax=ax_T
+    )
+    # ax_T.plot(Q.T_Data['nu_Hz'], transmission_corrected, label='Savgol corrected T',alpha=0.7)

@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-def FindPeaks(transmission_linear,**param_find_peaks)->np.ndarray:
+def FindPeaks(transmission_linear,**param_find_peaks)->tuple[np.ndarray,dict]:
     """ find peaks for FSR and pepareing for resonances fitting 
         Keyword Args:
            * **frequency_Hz** : the frequency in Hz (converted from wavelength).
@@ -15,7 +15,7 @@ def FindPeaks(transmission_linear,**param_find_peaks)->np.ndarray:
     else:
         param_find_peaks = {'distance':2000*0.8,
                             'prominence':0.0001}
-    idx_peaks, _ = find_peaks(-transmission_linear, **param_find_peaks)# when in linear unit
+    idx_peaks, properties = find_peaks(-transmission_linear, **param_find_peaks)# when in linear unit
     # peaks = pd.DataFrame(data = {'idx_peaks':idx_peaks,})
     
-    return idx_peaks
+    return idx_peaks, properties

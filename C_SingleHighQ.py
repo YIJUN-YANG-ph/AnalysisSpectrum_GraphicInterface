@@ -133,7 +133,7 @@ class SingleHighQ():
             return T_corrected
     def Q_FindPeak(self,
                    ax:matplotlib.axes._axes.Axes,
-                   **param_find_peaks)->tuple[np.ndarray,dict,np.ndarray,np.ndarray,np.ndarray]:
+                   **param_find_peaks)->tuple[np.ndarray,dict,np.ndarray,np.ndarray,np.ndarray,dict]:
         """
         Find peaks from the corrected optical transmission T_corrected.
 
@@ -165,6 +165,7 @@ class SingleHighQ():
                                 'rel_height':1,}
         T_corrected = self.T_corrected
         idx_peaks, properties_peaks = FindPeaks(T_corrected['T_linear'],**param_find_peaks)
+        
         promences = properties_peaks['prominences']
         # Calculate the height of each peak’s contour line and plot the results
         contour_heights = T_corrected['T_linear'][idx_peaks] + promences
@@ -174,7 +175,19 @@ class SingleHighQ():
         left_ips = properties_peaks['left_ips'].astype(int)
         right_ips = properties_peaks['right_ips'].astype(int)
         width_peaks = T_corrected['nu_Hz'].iloc[right_ips].to_numpy() - T_corrected['nu_Hz'].iloc[left_ips].to_numpy()
+        
+        
+        
+        # find width at half prominence, use rel_height=0.5, to get FWHM
+        param_find_peaks['rel_height'] = 0.5
+        _,properties_peaks_half = FindPeaks(T_corrected['T_linear'],**param_find_peaks)
+        FWHM_peaks = properties_peaks_half['widths'] * (T_corrected['nu_Hz'].iloc[1]-T_corrected['nu_Hz'].iloc[0])
+        properties_peaks['FWHM'] = FWHM_peaks
 
+
+        
+        
+        
         if ax:
             ax.plot(T_corrected['nu_Hz'][idx_peaks],
                     T_corrected['T_linear'][idx_peaks],
@@ -185,15 +198,21 @@ class SingleHighQ():
             
             ax.hlines(width_heights, T_corrected['nu_Hz'].iloc[left_ips].values, T_corrected['nu_Hz'].iloc[right_ips].values, 
                         linestyles='--',color="C2",label=f'width {(width_peaks*1e-6).astype(int)} MHz')
+            ax.hlines(-properties_peaks_half['width_heights'], T_corrected['nu_Hz'].iloc[properties_peaks_half['left_ips']].values, 
+                        T_corrected['nu_Hz'].iloc[properties_peaks_half['right_ips']].values, 
+                        linestyles=':',color="C3",label=f'FWHM{(FWHM_peaks*1e-6).astype(int)} MHz')
             ax.legend()
          
-        return idx_peaks, properties_peaks, right_ips, left_ips, width_peaks
+        
+
+
+        return idx_peaks, properties_peaks, right_ips, left_ips, width_peaks, properties_peaks_half
     def Q_RemoveOffset_Savgol(self,
                               idx_peaks:np.ndarray,
                               points_to_remove:int = 50,
                               window_length:int=101,
                               polyorder:int=2,
-                              ax:matplotlib.axes._axes.Axes = None)-> np.ndarray:
+                              ax:matplotlib.axes._axes.Axes = None)-> pd.DataFrame:
         """ Remove the background offset using Savgol filter.
         Args:
            * **idx_peaks** (np.ndarray): the index that indicates where the resonances are.
@@ -205,21 +224,26 @@ class SingleHighQ():
         """
         from F_RemoveOffsetSavgol import RemoveOffset_Savgol
         T_corrected = self.T_corrected
-        T_normalised, offset = RemoveOffset_Savgol(
+        T_normalised = T_corrected.copy()
+        T_normalised['T_linear'], offset = RemoveOffset_Savgol(
             T_corrected['T_linear'].to_numpy(),
             idx_peaks,
             points_to_remove=points_to_remove,
             window_length=window_length,
             polyorder=polyorder
         )
+        T_normalised['T_dB'] = 10 * np.log10(T_normalised['T_linear'])
+        # delete T_normalised['Pe_dBm']
+        T_normalised = T_normalised.drop(columns=['Pe_dBm'], errors='ignore')
         if ax:
             # ax.plot(T_corrected['nu_Hz'], T_normalised,label='Savgol corrected T',alpha=0.7)
 
             # ax = Fig_Savgol.add_subplot(111)
             # ax.plot(transmission, label='Original Transmission', alpha=0.5, linestyle='--')
             ax.plot(T_corrected['nu_Hz'], offset, label='Savgol Fitted Offset/filtered', alpha=0.7, linestyle='--')
-            ax.plot(T_corrected['nu_Hz'],T_normalised, label='Corrected Transmission', alpha=1,linestyle='dotted')
+            # ax.plot(T_corrected['nu_Hz'],T_normalised['T_linear'], label='Corrected Transmission', alpha=1,linestyle='dotted')
             # ax.set_title('Savgol Filter Background Removal')
+            ax.legend()
         return T_normalised
          
 if __name__ == "__main__":
@@ -238,15 +262,52 @@ if __name__ == "__main__":
     ax_T.legend()
 
     ### find the peak
-    idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = Q.Q_FindPeak(ax = ax_T)
+    idx_peaks, properties_peaks, right_ips, left_ips, width_peaks,properties_peaks_half = Q.Q_FindPeak(ax = ax_T)
     points_to_remove = (right_ips - left_ips).astype(int)
     ### fit the back ground offset using Savgol filter
     from F_RemoveOffsetSavgol import RemoveOffset_Savgol
+
     T_normalised = Q.Q_RemoveOffset_Savgol(
         idx_peaks,
-        window_length=20,
+        window_length=9,
         polyorder=2,
         points_to_remove=points_to_remove[0]+10,
         ax=ax_T
     )
-    # ax_T.plot(Q.T_Data['nu_Hz'], transmission_corrected, label='Savgol corrected T',alpha=0.7)
+
+    Fig_T_normalised = plt.figure()
+    ax_T_normalised = Fig_T_normalised.add_subplot(111)
+    ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6, T_normalised['T_linear'],label='Savgol corrected normalised T',
+                         alpha=0.7)
+    ax_T_normalised.set_xlabel('Frequency (MHz)')
+    ax_T_normalised.set_ylabel('T linear scale')
+    ax_T_normalised.legend()
+
+    ### fitting the resonance to get Q factor and other parameters
+    # step 1: choose the bounds for fitting
+    # try to refind the best bounds for Lorentian fitting
+    from F_Bounds import F_Bounds_SingleLorentzian
+    # bound for A, HWHM, lbd_res
+    # A
+    A0 = properties_peaks['prominences'][0] # initial guess from peak finding
+    Rel_A = 0.2
+    # FWHM
+    FWHM0 = properties_peaks['FWHM'][0] # initial guess from peak finding
+    Rel_FWHM = 0.2
+    # Peak position
+    Peak0 = T_normalised['nu_Hz'].iloc[idx_peaks[0]] # initial guess from peak finding
+    Rel_Peak = 0.2
+    bounds = F_Bounds_SingleLorentzian(
+        A0=A0, Rel_A=Rel_A,
+        FWHM0=FWHM0, Rel_FWHM=Rel_FWHM,
+        Peak0=Peak0, Rel_Peak=Rel_Peak
+    )
+    # step2: fitting using Lorentzian model with bounds
+    from F_LorentzianModel import f_locatized
+    opt, pcov, f_func_Lorentzian = f_locatized(
+        nu_res=T_normalised['nu_Hz'].to_numpy(),
+        signal_res=T_normalised['T_linear'].to_numpy(),
+        bounds=bounds, model='SingleLorentzian')
+    ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6,
+                          f_func_Lorentzian(T_normalised['nu_Hz'], *opt),
+                          label='Lorentzian Fit', linestyle='--')  

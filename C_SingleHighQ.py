@@ -9,9 +9,9 @@ class SingleHighQ():
     def __init__(self):
         self.x_data = np.array([])
         self.y_data = np.array([])
-        self.T_Data = self.load_data_singleQ()
-        self.T_Offset = self.load_data_Offset()
-        self.T_corrected = self.Remove_Offset()
+        # self.T_Data = self.load_data_singleQ()
+        # self.T_Offset = self.load_data_Offset()
+        # self.T_corrected = self.Remove_Offset()
     def load_data_Offset(self,ax = None):
         """
         Opens a file dialog to load a .txt or .
@@ -49,7 +49,7 @@ class SingleHighQ():
                     return T
                 except Exception as e:
                     print(f"Error loading file: {e}")
-    def load_data_singleQ(self,ax = None,
+    def load_data_singleQ(self,file_name = None, ax = None,
                           model = 'Heterodyne')-> pd.DataFrame:
             """
             Opens a file dialog to load a .txt or .csv file.
@@ -65,8 +65,9 @@ class SingleHighQ():
             # file_name, _ = QFileDialog.getOpenFileName(
             #     self, "Open Data File", "", "Text Files (*.txt *.csv)"
             # )
-            file_name = r'D80-G400-W1598.679-0-1.5(241025).txt'
-            file_name = r'D75-G400-W1549.524-2.5-3.9.txt'
+            if file_name is None:
+                file_name = r'D80-G400-W1598.679-0-1.5(241025).txt'
+                file_name = r'D75-G400-W1549.524-2.5-3.9.txt'
             # file_name = r'D75-G400-W1600.014-1.7-2.2.txt'
             # file_name = r'D75-G400-W1600.014-0-3.txt'
             """
@@ -118,7 +119,7 @@ class SingleHighQ():
                 ax.plot(T['nu_Hz'], T['T_dB'],label='resonance')
                 # plt.plot(T['nu_Hz'], T['T_dB'])
                 ax.set_xlabel('Frequency (Hz)')
-                ax.set_ylabel('Electrical Power (dBm)')
+                ax.set_ylabel('Power (dB)')
             return T
     def Remove_Offset(self,
                       ax:matplotlib.axes._axes.Axes = None)-> pd.DataFrame:
@@ -203,7 +204,7 @@ class SingleHighQ():
         
         # find width at half prominence, use rel_height=0.5, to get FWHM
         param_find_peaks['rel_height'] = 0.5
-        _,properties_peaks_half = FindPeaks(T_corrected['T_linear'],**param_find_peaks)
+        idx_peaks_2,properties_peaks_half = FindPeaks(T_corrected['T_linear'],**param_find_peaks)
         FWHM_peaks = properties_peaks_half['widths'] * (T_corrected['nu_Hz'].iloc[1]-T_corrected['nu_Hz'].iloc[0])
         properties_peaks['FWHM'] = FWHM_peaks
 
@@ -224,6 +225,7 @@ class SingleHighQ():
             ax.hlines(-properties_peaks_half['width_heights'], T_corrected['nu_Hz'].iloc[properties_peaks_half['left_ips']].values, 
                         T_corrected['nu_Hz'].iloc[properties_peaks_half['right_ips']].values, 
                         linestyles=':',color="C3",label=f'FWHM{(FWHM_peaks*1e-6).astype(int)} MHz')
+            ax.set_title('Peak Finding Results')
             ax.legend()
          
         
@@ -235,7 +237,7 @@ class SingleHighQ():
                               points_to_remove:int = 50,
                               window_length:int=101,
                               polyorder:int=2,
-                              ax:matplotlib.axes._axes.Axes = None)-> pd.DataFrame:
+                              ax:matplotlib.axes._axes.Axes = None)-> tuple[pd.DataFrame, np.ndarray]:
         """ Remove the background offset using Savgol filter.
         Args:
            * **T_corrected** (pd.DataFrame): DataFrame containing the corrected transmission data. A direct usable T that contains no huge background offset.
@@ -245,6 +247,7 @@ class SingleHighQ():
            * **polyorder** (int): polynomial order for Savgol filter
         Outputs:
            * **transmission_corrected** (np.array): the transmission where the background offset is removed. The resonance shapes are kept.
+           * **offset** (np.array): the back ground offset. The same as dimension as transmission_corrected.
         """
         from F_RemoveOffsetSavgol import RemoveOffset_Savgol
         # T_corrected = self.T_corrected
@@ -268,27 +271,50 @@ class SingleHighQ():
             # ax.plot(T_corrected['nu_Hz'],T_normalised['T_linear'], label='Corrected Transmission', alpha=1,linestyle='dotted')
             # ax.set_title('Savgol Filter Background Removal')
             ax.legend()
-        return T_normalised
+        return T_normalised, offset
     def PL_FitResonance(self,
                         T_corrected:pd.DataFrame,
-
+                        center_wl_nm:float = 1550,
                         ax_T:matplotlib.axes._axes.Axes = None,
-                        ax_T_normalised:matplotlib.axes._axes.Axes = None,):
+                        ax_T_normalised:matplotlib.axes._axes.Axes = None,
+                        param_rel:dict=None,
+                        **param_find_peaks,
+                        ):
         """
         A pipe line (PL) to fit each resonance.
         Parameters
         ----------
         T_corrected : pd.DataFrame
             DataFrame containing the corrected transmission data. A direct usable T that contains no huge background offset.
+        ax_T : matplotlib.axes._axes.Axes, optional
+            Axis to plot the peak finding results.
+        ax_T_normalised : matplotlib.axes._axes.Axes, optional
+            Axis to plot the normalised transmission and fitting results.
+        param_rel : dict, optional
+            Relative parameters for fitting bounds. If None, default values will be used.
+            * **Rel_FWHM** (float): relative range for FWHM around the initial guess.
+            * **Rel_A** (float): relative range for Amplitude around the initial guess.
+            * **Rel_Peak** (float): relative range for Peak position around the initial guess.
         """
         ### find the peak
-        idx_peaks, properties_peaks, right_ips, left_ips, width_peaks,properties_peaks_half = self.Q_FindPeak(T_corrected, ax = ax_T)
+        idx_peaks, properties_peaks, right_ips, left_ips, width_peaks,properties_peaks_half = self.Q_FindPeak(T_corrected, 
+                                                                                                              ax = ax_T,
+                                                                                                              **param_find_peaks)
+        # if didn't find the peak, give a warning and return
+        if len(idx_peaks) == 0:
+            print("No peaks found in the provided transmission data. Please check the data or adjust peak finding parameters.")
+            return
+        if len(properties_peaks_half['widths']) == 0:
+            print("No FWHM found in the provided transmission data. Please check the data or adjust peak finding parameters.")
+            return
+        
+        ### determine the points to remove around each resonance for Savgol filtering
         points_to_remove = ((right_ips - left_ips)*1.1).astype(int)
 
         ### fit the back ground offset using Savgol filter
         from F_RemoveOffsetSavgol import RemoveOffset_Savgol
 
-        T_normalised = self.Q_RemoveOffset_Savgol(
+        T_normalised, offset = self.Q_RemoveOffset_Savgol(
             T_corrected,
             idx_peaks,
             window_length=9,
@@ -302,24 +328,36 @@ class SingleHighQ():
         if ax_T_normalised is not None:
             ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6, T_normalised['T_linear'],label='Savgol corrected normalised T',
                                 alpha=0.7)
-            ax_T_normalised.set_xlabel('Frequency (MHz)')
+            ax_T_normalised.set_xlabel('rel Freq (MHz)')
             ax_T_normalised.set_ylabel('T linear scale')
+            ax_T_normalised.set_title('Normalised Transmission')
             ax_T_normalised.legend()
 
         ### fitting the resonance to get Q factor and other parameters
         # step 1: choose the bounds for fitting
         # try to refind the best bounds for Lorentian fitting
         from F_Bounds import F_Bounds_SingleLorentzian
+        
+        # if there is param_rel, update the Rel_A, Rel_FWHM, Rel_Peak
+        if param_rel is not None:
+            param_rel = param_rel
+        else:
+            param_rel = {'Rel_FWHM':0.2,
+                         'Rel_A':0.2,
+                         'Rel_Peak':0.2,}
+            
         # bound for A, HWHM, lbd_res
         # A
         A0 = properties_peaks['prominences'][0] # initial guess from peak finding
-        Rel_A = 0.2
+        A0 = A0/offset[idx_peaks[0]] # normalise the A0
+        Rel_A = param_rel['Rel_A']
         # FWHM
         FWHM0 = properties_peaks['FWHM'][0] # initial guess from peak finding
-        Rel_FWHM = 0.2
+        Rel_FWHM = param_rel['Rel_FWHM']     
         # Peak position
         Peak0 = T_normalised['nu_Hz'].iloc[idx_peaks[0]] # initial guess from peak finding
-        Rel_Peak = 0.2
+        Rel_Peak = param_rel['Rel_Peak']
+
         bounds = F_Bounds_SingleLorentzian(
             A0=A0, Rel_A=Rel_A,
             FWHM0=FWHM0, Rel_FWHM=Rel_FWHM,
@@ -336,6 +374,10 @@ class SingleHighQ():
             'FWHM': opt[1],
             'res': opt[2],
         }
+        fitting_pcov = pcov
+        self.fitting_options = fitting_options
+        self.fitting_pcov = fitting_pcov
+
         from F_QFactor import F_QFactor
         Q_factor = F_QFactor(
             nu_peak=wl2nu(1550),
@@ -344,7 +386,7 @@ class SingleHighQ():
         if ax_T_normalised is not None:
             ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6,
                                 f_func_Lorentzian(T_normalised['nu_Hz'], *opt),
-                                label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M', linestyle='--')  
+                                label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M@{center_wl_nm}nm', linestyle='--')  
             ax_T_normalised.legend()
         
         pass
@@ -352,25 +394,84 @@ class SingleHighQ():
 if __name__ == "__main__":
      
     import matplotlib.pyplot as plt
-    Fig_Pe = plt.figure()
-    ax_Pe = Fig_Pe.add_subplot(111)
-    Q = SingleHighQ()
-    Q.load_data_Offset(ax = ax_Pe)
-    Q.load_data_singleQ(ax = ax_Pe)
-    ax_Pe.legend()
+    ### an example usage for Heterodyne measurement
+    # Fig_Pe = plt.figure()
+    # ax_Pe = Fig_Pe.add_subplot(111)
+    # Q = SingleHighQ()
+    # Q.load_data_Offset(ax = ax_Pe)
+    # Q.load_data_singleQ(ax = ax_Pe)
+    # ax_Pe.legend()
 
+    # Fig_T = plt.figure()
+    # ax_T = Fig_T.add_subplot(111)
+    # T_corrected = Q.Remove_Offset(ax = ax_T)
+    # ax_T.legend()
+
+
+
+
+    # Fig_T_normalised = plt.figure()
+    # ax_T_normalised = Fig_T_normalised.add_subplot(111)
+
+    # Q.PL_FitResonance(
+    #     T_corrected=T_corrected,
+    #     ax_T_normalised=ax_T_normalised,
+    #     ax_T=ax_T)
+    
+
+    ### another example usage for Fine Scan measurement
+    Q = SingleHighQ()
     Fig_T = plt.figure()
     ax_T = Fig_T.add_subplot(111)
-    T_corrected = Q.Remove_Offset(ax = ax_T)
-    ax_T.legend()
+    T_corrected = Q.load_data_singleQ(file_name=r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202509_2509SiN700A_Multipassage\mesurement\Laser fine tunning\D80\RR0.4.txt',
+                                      model='FineScan',
+                                      )
+    ax_T.plot(T_corrected['nu_Hz'], T_corrected['T_linear'],'o',label='resonance',alpha=0.3)
+    
+    Fig_T_normalised = plt.figure()
+    ax_T_normalised = Fig_T_normalised.add_subplot(111)
 
+    param_find_peaks = {'distance':30,
+                        'prominence':0.001,
+                        'width':10,
+                        'rel_height':1,}
+    param_rel = {'Rel_FWHM':0.2,
+                 'Rel_A':0.2,
+                 'Rel_Peak':0.2,}
+    Q.PL_FitResonance(
+        T_corrected=T_corrected,
+        center_wl_nm=1550,
+        ax_T_normalised=ax_T_normalised,
+        ax_T=ax_T,
+        param_rel=param_rel,
+        **param_find_peaks)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    '''
     ### find the peak
     idx_peaks, properties_peaks, right_ips, left_ips, width_peaks,properties_peaks_half = Q.Q_FindPeak(T_corrected, ax = ax_T)
     points_to_remove = (right_ips - left_ips).astype(int)
     ### fit the back ground offset using Savgol filter
     from F_RemoveOffsetSavgol import RemoveOffset_Savgol
 
-    T_normalised = Q.Q_RemoveOffset_Savgol(
+    T_normalised, offset = Q.Q_RemoveOffset_Savgol(
         T_corrected,
         idx_peaks,
         window_length=9,
@@ -427,4 +528,4 @@ if __name__ == "__main__":
                           f_func_Lorentzian(T_normalised['nu_Hz'], *opt),
                           label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M', linestyle='--')  
     ax_T_normalised.legend()
-    
+    '''

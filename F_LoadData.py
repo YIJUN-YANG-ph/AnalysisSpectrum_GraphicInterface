@@ -5,7 +5,8 @@ import os
 from yaml import warnings
 from F_ConvertUnits import wl2nu, nu2wl, dB2linear
 
-def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None)->pd.DataFrame:
+def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None,
+              f_convert:callable = None)->pd.DataFrame:
     """ 
     Load data from file with flexible column name handling.
     
@@ -14,9 +15,10 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
        * **wl_name** : the column name that indicates wavelength in nm.
        * **data_name** : the column name that indicates the transmission in dB.
        * **range_wl** : a list or tuple specifying the wavelength range to filter [min_wavelength, max_wavelength].
+       * **f_convert** : a callable function to convert x-axis data if needed.
     
     Returns:
-       * **T** : pandas dataframe: wavelength_nm, nu_Hz, T_dB, T_linear.
+       * **T** : pandas dataframe: (wavelength_nm), nu_Hz, T_dB, T_linear.
     """
     
     # Load the data
@@ -54,17 +56,23 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
         wavelength = wavelength[mask]
         transmission = transmission[mask]
 
-    # Calculate derived data
-    nu = wl2nu(wavelength)
-    transmission_linear = dB2linear(transmission)
 
-    # Create and return DataFrame
-    T = pd.DataFrame({
-        'wavelength_nm': wavelength,
-        'T_dB': transmission,
-        'T_linear': transmission_linear,
-        'nu_Hz': nu
-    })
+
+    # Apply x-axis conversion if provided
+    if f_convert is not None:
+        T = f_convert(wavelength, transmission)
+    else:
+        # Calculate derived data
+        nu = wl2nu(wavelength)
+        transmission_linear = dB2linear(transmission)
+
+        # Create and return DataFrame
+        T = pd.DataFrame({
+            'wavelength_nm': wavelength,
+            'T_dB': transmission,
+            'T_linear': transmission_linear,
+            'nu_Hz': nu
+        })
 
     return T
 
@@ -88,3 +96,27 @@ if __name__ == "__main__":
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Electrical Power (dB)')
     print(T.head())
+
+
+    # Another example usage, with time sweeping measurement
+    from F_ConvertUnits import time2nu
+    file_name = r'RR0.4-F30mHz-V2pp.txt'
+    file_name = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202509_2509SiN700A_Multipassage\mesurement\Laser fine tunning\D80\RR0.4.txt'
+    params = {'Vpp_V':4,'Freq_Hz':30*1e-3,'Tunning_Hz_V':300*1e6}
+    T = load_data(file_name, wl_name='Time(s)', data_name='ct400.detectors.P_detector1(dBm)',
+                  f_convert=lambda t, d: time2nu(t, d, Params=params))
+    # each 1s give 36*1e6 Hz
+    # T['nu_Hz'] = T['wavelength_nm'] * 36e6
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.plot(T['nu_Hz']*1e-6-11000-750, T['T_linear'])
+    plt.xlabel('Frequency (MHz)')    
+    plt.ylabel('Transmission (dB)')
+
+    # Another example usage, with heterodyne measurement
+    from F_ConvertUnits import Heterodyne
+    file_name = r'D75-G400-W1549.524-2.5-3.9.txt'
+    T = load_data(file_name, wl_name='frequency', data_name='power1',
+                  f_convert=lambda nu, Pe: Heterodyne(nu*1e9, Pe))
+
+

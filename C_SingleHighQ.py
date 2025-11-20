@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from F_LoadData import load_data
-from F_ConvertUnits import nu2wl, wl2nu
+from F_ConvertUnits import Heterodyne, nu2wl, time2nu, wl2nu
 import matplotlib
 import matplotlib.pyplot as plt
 from scipy.signal import chirp, find_peaks, peak_widths
@@ -31,7 +31,7 @@ class SingleHighQ():
 
                     # rearrange columns
                     T['Pe_dBm'] = T['T_dB'].copy() # electrical power in dBm
-                    T['T_dB'] = T['Pe_dBm'] * 0.5 # optical power = (electrical power)*0.5 in dB
+                    T['T_dB'] = T['Pe_dBm'] * 1 # optical power = (electrical power)*0.5 in dB
                     T['T_linear'] = 10**(T['T_dB']/10) # convert dB to linear scale
                     if ax:
                         import matplotlib.pyplot as plt
@@ -49,7 +49,8 @@ class SingleHighQ():
                     return T
                 except Exception as e:
                     print(f"Error loading file: {e}")
-    def load_data_singleQ(self,ax = None):
+    def load_data_singleQ(self,ax = None,
+                          model = 'Heterodyne')-> pd.DataFrame:
             """
             Opens a file dialog to load a .txt or .csv file.
             Assumes 2-column data (x, y) separated by comma, space, or tab.
@@ -64,8 +65,11 @@ class SingleHighQ():
             # file_name, _ = QFileDialog.getOpenFileName(
             #     self, "Open Data File", "", "Text Files (*.txt *.csv)"
             # )
-            # file_name = r'D80-G400-W1598.679-0-1.5(241025).txt'
+            file_name = r'D80-G400-W1598.679-0-1.5(241025).txt'
             file_name = r'D75-G400-W1549.524-2.5-3.9.txt'
+            # file_name = r'D75-G400-W1600.014-1.7-2.2.txt'
+            # file_name = r'D75-G400-W1600.014-0-3.txt'
+            """
             if file_name:
                 try:                
                     # file_name = r'D80-G400-W1598.679-0-1.5(241025).txt'
@@ -79,7 +83,7 @@ class SingleHighQ():
 
                     # rearrange columns
                     T['Pe_dBm'] = T['T_dB'].copy() # electrical power in dBm
-                    T['T_dB'] = T['Pe_dBm'] * 0.5 # optical power = (electrical power)*0.5 in dB
+                    T['T_dB'] = T['Pe_dBm'] * 1 # optical power = (electrical power)*0.5 in dB
                     T['T_linear'] = 10**(T['T_dB']/10) # convert dB to linear scale
 
                     self.x_data = T['nu_Hz'].values
@@ -97,6 +101,25 @@ class SingleHighQ():
                     return T
                 except Exception as e:
                     print(f"Error loading file: {e}")
+            """
+            # switch
+            if model == 'Heterodyne':
+                T = load_data(file_name, wl_name='frequency', data_name='power1',
+                    f_convert=lambda nu, Pe: Heterodyne(nu*1e9, Pe))
+            elif model =='FineScan':
+                params = {'Vpp_V':4,'Freq_Hz':30*1e-3,'Tunning_Hz_V':300*1e6}
+                T = load_data(file_name, wl_name='Time(s)', data_name='ct400.detectors.P_detector1(dBm)',
+                f_convert=lambda t, d: time2nu(t, d, Params=params))
+            else:# default
+                T = load_data(file_name, wl_name='L', data_name='1')   
+                 
+            if ax:
+                import matplotlib.pyplot as plt
+                ax.plot(T['nu_Hz'], T['T_dB'],label='resonance')
+                # plt.plot(T['nu_Hz'], T['T_dB'])
+                ax.set_xlabel('Frequency (Hz)')
+                ax.set_ylabel('Electrical Power (dBm)')
+            return T
     def Remove_Offset(self,
                       ax:matplotlib.axes._axes.Axes = None)-> pd.DataFrame:
          """Remove the offset from the single Q data using the offset data.
@@ -118,7 +141,7 @@ class SingleHighQ():
             # Create a new DataFrame to hold the corrected data
             T_corrected = self.T_Data.copy()
             T_corrected['Pe_dBm'] = corrected_y_data
-            T_corrected['T_dB'] = T_corrected['Pe_dBm'] * 0.5 # optical power = (electrical power)*0.5 in dB
+            T_corrected['T_dB'] = T_corrected['Pe_dBm'] * 1 # optical power = (electrical power)*0.5 in dB
             T_corrected['T_linear'] = 10**(T_corrected['T_dB']/10) # update linear scale as well
             if ax:
                 # plot corrected data
@@ -207,7 +230,7 @@ class SingleHighQ():
 
 
         return idx_peaks, properties_peaks, right_ips, left_ips, width_peaks, properties_peaks_half
-    def Q_RemoveOffset_Savgol(self,
+    def Q_RemoveOffset_Savgol(self,T_corrected:pd.DataFrame,
                               idx_peaks:np.ndarray,
                               points_to_remove:int = 50,
                               window_length:int=101,
@@ -215,6 +238,7 @@ class SingleHighQ():
                               ax:matplotlib.axes._axes.Axes = None)-> pd.DataFrame:
         """ Remove the background offset using Savgol filter.
         Args:
+           * **T_corrected** (pd.DataFrame): DataFrame containing the corrected transmission data. A direct usable T that contains no huge background offset.
            * **idx_peaks** (np.ndarray): the index that indicates where the resonances are.
            * **points_to_remove** (np.int): the number of points that will be removed around each resonances when doing Savgol filtering.
            * **window_length** (int): window length for Savgol filter, need to be odd number.
@@ -223,7 +247,7 @@ class SingleHighQ():
            * **transmission_corrected** (np.array): the transmission where the background offset is removed. The resonance shapes are kept.
         """
         from F_RemoveOffsetSavgol import RemoveOffset_Savgol
-        T_corrected = self.T_corrected
+        # T_corrected = self.T_corrected
         T_normalised = T_corrected.copy()
         T_normalised['T_linear'], offset = RemoveOffset_Savgol(
             T_corrected['T_linear'].to_numpy(),
@@ -247,7 +271,9 @@ class SingleHighQ():
         return T_normalised
     def PL_FitResonance(self,
                         T_corrected:pd.DataFrame,
-                        ax_T:matplotlib.axes._axes.Axes = None):
+
+                        ax_T:matplotlib.axes._axes.Axes = None,
+                        ax_T_normalised:matplotlib.axes._axes.Axes = None,):
         """
         A pipe line (PL) to fit each resonance.
         Parameters
@@ -263,20 +289,22 @@ class SingleHighQ():
         from F_RemoveOffsetSavgol import RemoveOffset_Savgol
 
         T_normalised = self.Q_RemoveOffset_Savgol(
+            T_corrected,
             idx_peaks,
             window_length=9,
             polyorder=2,
-            points_to_remove=points_to_remove[0]+10,
+            points_to_remove=points_to_remove[0],
             ax=ax_T
         )
 
-        Fig_T_normalised = plt.figure()
-        ax_T_normalised = Fig_T_normalised.add_subplot(111)
-        ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6, T_normalised['T_linear'],label='Savgol corrected normalised T',
-                            alpha=0.7)
-        ax_T_normalised.set_xlabel('Frequency (MHz)')
-        ax_T_normalised.set_ylabel('T linear scale')
-        ax_T_normalised.legend()
+        # Fig_T_normalised = plt.figure()
+        # ax_T_normalised = Fig_T_normalised.add_subplot(111)
+        if ax_T_normalised is not None:
+            ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6, T_normalised['T_linear'],label='Savgol corrected normalised T',
+                                alpha=0.7)
+            ax_T_normalised.set_xlabel('Frequency (MHz)')
+            ax_T_normalised.set_ylabel('T linear scale')
+            ax_T_normalised.legend()
 
         ### fitting the resonance to get Q factor and other parameters
         # step 1: choose the bounds for fitting
@@ -313,11 +341,11 @@ class SingleHighQ():
             nu_peak=wl2nu(1550),
             FWHM=fitting_options['FWHM']
         )
-
-        ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6,
-                            f_func_Lorentzian(T_normalised['nu_Hz'], *opt),
-                            label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M', linestyle='--')  
-        ax_T_normalised.legend()
+        if ax_T_normalised is not None:
+            ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6,
+                                f_func_Lorentzian(T_normalised['nu_Hz'], *opt),
+                                label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M', linestyle='--')  
+            ax_T_normalised.legend()
         
         pass
     
@@ -343,6 +371,7 @@ if __name__ == "__main__":
     from F_RemoveOffsetSavgol import RemoveOffset_Savgol
 
     T_normalised = Q.Q_RemoveOffset_Savgol(
+        T_corrected,
         idx_peaks,
         window_length=9,
         polyorder=2,

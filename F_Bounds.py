@@ -33,6 +33,53 @@ def F_Bounds_SingleLorentzian(A_lower: float = 0, A_upper: float = 1,
     bounds = (lower_bounds, upper_bounds)
     return bounds
 
+def F_Bounds_DoubleLorentzian(A1_lower: float = 0, A1_upper: float = 1,
+                              FWHM1_lower: float = 0, FWHM1_upper: float = 1,
+                              Peak1_lower: float = 0, Peak1_upper: float = 1,
+                              A2_lower: float = 0, A2_upper: float = 1,
+                              FWHM2_lower: float = 0, FWHM2_upper: float = 1,
+                              Peak2_lower: float = 0, Peak2_upper: float = 1,
+                              A1_0: float = None, Rel_A1: float = 0.1,
+                              FWHM1_0: float = None, Rel_FWHM1: float = 0.1,
+                              Peak1_0: float = None, Rel_Peak1: float = 0.1,
+                              A2_0: float = None, Rel_A2: float = 0.1,
+                              FWHM2_0: float = None, Rel_FWHM2: float = 0.1,
+                              Peak2_0: float = None, Rel_Peak2: float = 0.1
+                              )->tuple[np.ndarray, np.ndarray]:
+    """ A function to define the bounds for Lorentzian fitting for doublet resonance
+        suitable for function defined in F_LorentzianModel.f_func_DoubleLorentzian
+        Comments by Yijun
+        Args:
+           * **transmission_linear** (np.ndarray): the linear transmission data.
+    """
+    from F_LorentzianModel import f_func_DoubleLorentzian
+    if A1_0 is not None:
+        A1_lower = A1_0*(1-Rel_A1)
+        A1_upper = A1_0*(1+Rel_A1)
+    if FWHM1_0 is not None:
+        FWHM1_lower = FWHM1_0*(1-Rel_FWHM1)
+        FWHM1_upper = FWHM1_0*(1+Rel_FWHM1)
+    if Peak1_0 is not None:
+        Peak1_lower = Peak1_0*(1-Rel_Peak1)
+        Peak1_upper = Peak1_0*(1+Rel_Peak1) 
+    if A2_0 is not None:
+        A2_lower = A2_0*(1-Rel_A2)
+        A2_upper = A2_0*(1+Rel_A2)
+    if FWHM2_0 is not None:
+        FWHM2_lower = FWHM2_0*(1-Rel_FWHM2)
+        FWHM2_upper = FWHM2_0*(1+Rel_FWHM2)
+    if Peak2_0 is not None:
+        Peak2_lower = Peak2_0*(1-Rel_Peak2)
+        Peak2_upper = Peak2_0*(1+Rel_Peak2) 
+    lower_bounds = np.array([A1_lower, FWHM1_lower, Peak1_lower,
+                             A2_lower, FWHM2_lower, Peak2_lower])
+    upper_bounds = np.array([A1_upper, FWHM1_upper, Peak1_upper,
+                             A2_upper, FWHM2_upper, Peak2_upper])
+    bounds = (lower_bounds, upper_bounds)
+    return bounds
+
+
+
 if __name__ == "__main__":
     bounds = F_Bounds_SingleLorentzian(A0=0.5, Rel_A=0.2,
                                        FWHM0=0.01e12, Rel_FWHM=0.5,

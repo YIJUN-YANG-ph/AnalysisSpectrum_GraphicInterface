@@ -12,7 +12,7 @@ def f_locatized(nu_res:np.ndarray,
         Args:
            * **nu_res,signal_res** (array): the mesurements around a given resonance nu
            * **bounds** (array): bounds for Lorentzian fitting
-           * **model** (str): currently only 'SingleLorentzian' is implemented
+           * **model** (str): currently only 'SingleLorentzian' and 'DoubleLorentzian' are supported
         Ref:
             
     """
@@ -35,7 +35,27 @@ def f_locatized(nu_res:np.ndarray,
 
     if model == 'SingleLorentzian':
         popt, pcov = curve_fit(f_func_Lorentzian,nu_res,signal_res, bounds=bounds)
+    elif model == 'DoubleLorentzian':
+        # from F_LorentzianModel import f_func_DoubleLorentzian
+        popt, pcov = curve_fit(f_func_DoubleLorentzian,nu_res,signal_res, bounds=bounds)  
+        return popt, pcov, f_func_DoubleLorentzian
     else:
         raise NotImplementedError(f'Model {model} not implemented yet.')
     
     return popt, pcov, f_func_Lorentzian #,f_coupler
+
+def f_func_DoubleLorentzian(lbd, A1, FWHM1, lbd_res1, A2, FWHM2, lbd_res2):
+    """ Lorentzian fitting function for degenerate resonance. A simplied version with two Lorentzian functions added together
+
+        Comments by Yijun, wl or freq. don't matter
+        Args:
+           * **lbd** (float): wavelength in nm or frequency in Hz
+           * **A1,A2** (float): parameter to find extinction ratio
+           * **FWHM1,FWHM2** (float): full width at half maximum
+           * **lbd_res1,lbd_res2** (float): resonance frequency
+        Ref:
+            https://doi.org/10.1364/OE.381224
+            10.1002/lpor.201500207
+            10.1021/acsphotonics.9b01593
+    """
+    return -A1 / (1+((lbd-lbd_res1)/(0.5*FWHM1))**2) -A2 / (1+((lbd-lbd_res2)/(0.5*FWHM2))**2) + 1 #f_coupler(lbd)

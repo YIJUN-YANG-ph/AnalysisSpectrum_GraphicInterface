@@ -5,6 +5,7 @@ from F_ConvertUnits import Heterodyne, nu2wl, time2nu, wl2nu
 import matplotlib
 import matplotlib.pyplot as plt
 from scipy.signal import chirp, find_peaks, peak_widths
+from F_QFactor import F_QFactor
 class SingleHighQ():
     def __init__(self):
         self.x_data = np.array([])
@@ -108,7 +109,7 @@ class SingleHighQ():
                 T = load_data(file_name, wl_name='frequency', data_name='power1',
                     f_convert=lambda nu, Pe: Heterodyne(nu*1e9, Pe))
             elif model =='FineScan':
-                params = {'Vpp_V':4,'Freq_Hz':30*1e-3,'Tunning_Hz_V':300*1e6}
+                params = {'Vpp_V':10,'Freq_Hz':10*1e-3,'Tunning_Hz_V':300*1e6}
                 T = load_data(file_name, wl_name='Time(s)', data_name='ct400.detectors.P_detector1(dBm)',
                 f_convert=lambda t, d: time2nu(t, d, Params=params))
             else:# default
@@ -227,11 +228,85 @@ class SingleHighQ():
                         linestyles=':',color="C3",label=f'FWHM{(FWHM_peaks*1e-6).astype(int)} MHz')
             ax.set_title('Peak Finding Results')
             ax.legend()
-         
-        
-
 
         return idx_peaks, properties_peaks, right_ips, left_ips, width_peaks, properties_peaks_half
+    
+    def Q_FindDoubletResonance(self,T_corrected:pd.DataFrame,
+                               ax:matplotlib.axes._axes.Axes,
+                               **param_find_DoubletResonance)->tuple[np.ndarray,dict,np.ndarray,np.ndarray,np.ndarray]:
+        """
+        Find peaks of doublet resonance from the corrected optical transmission T_corrected(or even normalised T).
+
+        Parameters
+        ----------
+        T_corrected : pd.DataFrame. Should better be the normalised T that contains no huge background offset.
+        ax : matplotlib.axes._axes.Axes, optional, if provided, the peaks will be plotted on this axis.
+        param_find_DoubletResonance : dict, optional, {'distance':2000*0.8,'prominence':0.1,'width':5,'rel_height':0.5,}
+        
+        Returns
+        -------
+        idx_peaks : np.ndarray
+            Indices of the detected peaks in T_corrected['T_linear'].
+        properties_peaks : dict
+            Properties of the detected peaks as returned by scipy.signal.find_peaks.
+        right_ips : np.ndarray
+            Right intersection points of the peak widths.
+        left_ips : np.ndarray
+            Left intersection points of the peak widths.
+        width_peaks : np.ndarray
+            Widths of the peaks in the same units as T_corrected['nu_Hz'].
+        """
+        from F_FindPeaks import FindPeaks
+        if param_find_DoubletResonance:
+            param_find_DoubletResonance = param_find_DoubletResonance
+        else:
+            param_find_DoubletResonance = {'distance':10,
+                                'prominence':0.1,
+                                'width':5,
+                                'rel_height':1,}
+        # T_corrected = self.T_corrected
+        idx_peaks, properties_peaks = FindPeaks(T_corrected['T_linear'],**param_find_DoubletResonance)
+        
+        promences = properties_peaks['prominences']
+        # Calculate the height of each peak’s contour line and plot the results
+        contour_heights = T_corrected['T_linear'][idx_peaks] + promences
+        # Find all peaks and calculate their widths at the relative height of 0.5 (contour line at half the prominence height) 
+        # and 1 (at the lowest contour line at full prominence height).
+        width_heights = -properties_peaks['width_heights']
+        left_ips = properties_peaks['left_ips'].astype(int)
+        right_ips = properties_peaks['right_ips'].astype(int)
+        width_peaks = T_corrected['nu_Hz'].iloc[right_ips].to_numpy() - T_corrected['nu_Hz'].iloc[left_ips].to_numpy()
+        
+        
+        
+        # find width at half prominence, use rel_height=0.5, to get FWHM
+        # param_find_peaks['rel_height'] = 0.5
+        # idx_peaks_2,properties_peaks_half = FindPeaks(T_corrected['T_linear'],**param_find_peaks)
+        # FWHM_peaks = properties_peaks_half['widths'] * (T_corrected['nu_Hz'].iloc[1]-T_corrected['nu_Hz'].iloc[0])
+        # properties_peaks['FWHM'] = FWHM_peaks
+
+
+        
+        
+        
+        if ax:
+            ax.plot(T_corrected['nu_Hz'], T_corrected['T_linear'],'o',alpha=0.5)
+            ax.plot(T_corrected['nu_Hz'][idx_peaks],
+                    T_corrected['T_linear'][idx_peaks],
+                    'o')
+            
+            ax.vlines(x=T_corrected['nu_Hz'][idx_peaks], ymin=contour_heights, ymax=T_corrected['T_linear'][idx_peaks],
+                        linestyles="dashdot", color="C1",label='prominence')
+            
+            ax.hlines(width_heights, T_corrected['nu_Hz'].iloc[left_ips].values, T_corrected['nu_Hz'].iloc[right_ips].values, 
+                        linestyles='--',color="C2",label=f'width {(width_peaks*1e-6).astype(int)} MHz')
+            # ax.hlines(-properties_peaks_half['width_heights'], T_corrected['nu_Hz'].iloc[properties_peaks_half['left_ips']].values, 
+            #             T_corrected['nu_Hz'].iloc[properties_peaks_half['right_ips']].values, 
+            #             linestyles=':',color="C3",label=f'FWHM{(FWHM_peaks*1e-6).astype(int)} MHz')
+            ax.set_title('Doublet Peak Finding Results')
+            ax.legend()
+        return idx_peaks, properties_peaks, right_ips, left_ips, width_peaks#, properties_peaks_half
+    
     def Q_RemoveOffset_Savgol(self,T_corrected:pd.DataFrame,
                               idx_peaks:np.ndarray,
                               points_to_remove:int = 50,
@@ -272,6 +347,8 @@ class SingleHighQ():
             # ax.set_title('Savgol Filter Background Removal')
             ax.legend()
         return T_normalised, offset
+    
+    
     def PL_FitResonance(self,
                         T_corrected:pd.DataFrame,
                         center_wl_nm:float = 1550,
@@ -279,7 +356,7 @@ class SingleHighQ():
                         ax_T_normalised:matplotlib.axes._axes.Axes = None,
                         param_rel:dict=None,
                         **param_find_peaks,
-                        ):
+                        )-> pd.DataFrame:
         """
         A pipe line (PL) to fit each resonance.
         Parameters
@@ -389,7 +466,7 @@ class SingleHighQ():
                                 label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M@{center_wl_nm}nm', linestyle='--')  
             ax_T_normalised.legend()
         
-        pass
+        return T_normalised
     
 if __name__ == "__main__":
      
@@ -426,25 +503,91 @@ if __name__ == "__main__":
     T_corrected = Q.load_data_singleQ(file_name=r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202509_2509SiN700A_Multipassage\mesurement\Laser fine tunning\D80\RR0.4.txt',
                                       model='FineScan',
                                       )
+    FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D75'
+    FileName = r'RRW1.1G0.5L1569.368F10mHzA5V.txt'
+    FileName = r'RRW1.1G0.5L1560.438F10mHzA5V(2).txt'
+    # FileName = r'RRW2.8G0.5L1628.594F5mHzA2V.txt'
+    from os.path import join
+    file_name=join(FolderName,FileName)
+    T_corrected = Q.load_data_singleQ(file_name=file_name,
+                                      model='FineScan',)
     ax_T.plot(T_corrected['nu_Hz'], T_corrected['T_linear'],'o',label='resonance',alpha=0.3)
     
     Fig_T_normalised = plt.figure()
     ax_T_normalised = Fig_T_normalised.add_subplot(111)
 
-    param_find_peaks = {'distance':30,
-                        'prominence':0.001,
-                        'width':10,
+    param_find_peaks = {'distance':30/3,
+                        'prominence':0.001*1,
+                        'width':5,
                         'rel_height':1,}
     param_rel = {'Rel_FWHM':0.2,
                  'Rel_A':0.2,
                  'Rel_Peak':0.2,}
-    Q.PL_FitResonance(
+    T_normalised = Q.PL_FitResonance(
         T_corrected=T_corrected,
-        center_wl_nm=1550,
+        center_wl_nm=1628,
         ax_T_normalised=ax_T_normalised,
         ax_T=ax_T,
         param_rel=param_rel,
         **param_find_peaks)
+    
+
+    Fig_Doublet = plt.figure()
+    ax_Doublet = Fig_Doublet.add_subplot(111)
+    param_find_DoubletResonance = {'distance':10,
+                                'prominence':0.1,
+                                'width':5,
+                                'rel_height':0.5,}
+    idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = Q.Q_FindDoubletResonance(
+        T_normalised,
+        ax=ax_Doublet,
+        **param_find_DoubletResonance)
+    ax_Doublet.set_xlabel('RelFreq (Hz)')
+    ax_Doublet.set_ylabel('T linear scale')
+
+    # if there is param_rel, update the Rel_A, Rel_FWHM, Rel_Peak
+    
+    param_rel_Doublet = {'Rel_A1':1.2,
+                         'Rel_A2':1.2,
+                         'Rel_FWHM1':1,
+                         'Rel_FWHM2':1,
+                         'Rel_Peak1':0.5,
+                         'Rel_Peak2':0.5,}
+    from F_Bounds import F_Bounds_DoubleLorentzian
+    # bound for A1, A2, FWHM1, FWHM2, lbd_res1, lbd_res2
+    # A1
+    A1_0 = properties_peaks['prominences'][0] # initial guess from peak finding
+    A2_0 = properties_peaks['prominences'][1] # initial guess from peak finding
+    FWHM1_0 = properties_peaks['widths'].max() * (T_normalised['nu_Hz'].iloc[1]-T_normalised['nu_Hz'].iloc[0]) # initial guess from peak finding
+    FWHM2_0 = properties_peaks['widths'].max() * (T_normalised['nu_Hz'].iloc[1]-T_normalised['nu_Hz'].iloc[0]) # initial guess from peak finding
+    Peak1_0 = T_normalised['nu_Hz'].iloc[idx_peaks[0]] # initial guess from peak finding
+    Peak2_0 = T_normalised['nu_Hz'].iloc[idx_peaks[1]] # initial guess from peak finding
+    bounds_Doublet = F_Bounds_DoubleLorentzian(A1_0=A1_0, Rel_A1=param_rel_Doublet['Rel_A1'],
+                                               A2_0=A2_0, Rel_A2=param_rel_Doublet['Rel_A2'],
+                                               FWHM1_0=FWHM1_0, Rel_FWHM1=param_rel_Doublet['Rel_FWHM1'],
+                                               FWHM2_0=FWHM2_0, Rel_FWHM2=param_rel_Doublet['Rel_FWHM2'],
+                                               Peak1_0=Peak1_0, Rel_Peak1=param_rel_Doublet['Rel_Peak1'],
+                                               Peak2_0=Peak2_0, Rel_Peak2=param_rel_Doublet['Rel_Peak2'],
+                                               )
+    # step2: fitting using Lorentzian doublet model with bounds
+    from F_LorentzianModel import f_locatized
+    opt_Doublet, pcov_Doublet, f_func_DoubleLorentzian = f_locatized(
+        nu_res=T_normalised['nu_Hz'].to_numpy(),
+        signal_res=T_normalised['T_linear'].to_numpy(),
+        bounds=bounds_Doublet, model='DoubleLorentzian')
+    # Q factor for the first resonance
+    Q_factor1 = F_QFactor(
+        nu_peak=wl2nu(1550),
+        FWHM=opt_Doublet[1]
+    )
+    ax_Doublet.plot(T_normalised['nu_Hz'],
+                    f_func_DoubleLorentzian(T_normalised['nu_Hz'], *opt_Doublet),
+                    label=f'Doublet Lorentzian Fit Q1={Q_factor1*1e-6:.2f}M', linestyle='--',
+                    color = 'C4')
+    ax_Doublet.legend()
+    
+
+    plt.show()
     
     
     

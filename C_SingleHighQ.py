@@ -713,7 +713,7 @@ if __name__ == "__main__":
     FileName = r'RRW2.8G0.5L1628.594F5mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1534.283F10mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1530.243F10mHzA2V.txt'
-    FileName = r'RRW1.1G0.5L1589.309F10mHzA2V.txt'
+    FileName = r'RRW1.1G0.5L1609.707F10mHzA2V.txt'
     # RRW1.1G0.5L1570.515F510mHzA2V
     from F_GetConfig import F_GetConfig
     config = F_GetConfig(FileName = FileName)
@@ -736,7 +736,7 @@ if __name__ == "__main__":
     param_rel = {'Rel_FWHM':0.2,
                  'Rel_A':0.2,
                  'Rel_Peak':0.2,
-                 'factor_remove_points':1,# factor to multiply the width to get the points to remove for Savgol filtering
+                 'factor_remove_points':0.3,# factor to multiply the width to get the points to remove for Savgol filtering
         }
     from F_FindPeaks import F_SelectPeaks
     # param_find_peaks = F_SelectPeaks(T_corrected['T_linear'].values, param_find_peaks, num_peaks=5)
@@ -752,9 +752,9 @@ if __name__ == "__main__":
 
     Fig_Doublet = plt.figure()
     ax_Doublet = Fig_Doublet.add_subplot(111)
-    param_find_DoubletResonance = {'distance':10,
+    param_find_DoubletResonance = {'distance':11,
                                 'prominence':0.1,
-                                'width':2,
+                                'width':2.5,
                                 'rel_height':0.5,}
     
     param_rel_Doublet = {'Rel_A1':0.99,

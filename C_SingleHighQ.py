@@ -387,7 +387,8 @@ class SingleHighQ():
             param_find_DoubletResonance = {'distance':10,
                                     'prominence':0.1,
                                     'width':5,
-                                    'rel_height':0.5,}
+                                    'rel_height':0.5,
+                                    }
         idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = Q.Q_FindDoubletResonance(
             T_normalised,
             ax=ax_Doublet,
@@ -403,9 +404,21 @@ class SingleHighQ():
                                 'Rel_FWHM1':1,
                                 'Rel_FWHM2':1,
                                 'Rel_Peak1':0.5,
-                                'Rel_Peak2':0.5,}
+                                'Rel_Peak2':0.5,
+                                '1st peak':0,
+                                '2nd peak':1,}
         from F_Bounds import F_Bounds_DoubleLorentzian
         # bound for A1, A2, FWHM1, FWHM2, lbd_res1, lbd_res2
+        # idx_select: index of the selected resonance, by default is the first one and the second one
+        if len(idx_peaks) < 2:
+            raise ValueError("Less than two peaks found for doublet fitting.")
+        
+        else:
+            idx_select = [idx_peaks[param_rel_Doublet['1st peak']], idx_peaks[param_rel_Doublet['2nd peak']]]
+        ##############
+        ##############
+        ##############
+
         # A1
         A1_0 = properties_peaks['prominences'].max() # initial guess from peak finding
         # A2_0 = properties_peaks['prominences'][1] # initial guess from peak finding
@@ -415,8 +428,8 @@ class SingleHighQ():
         FWHM2_0 = FWHM1_0 # set the second FWHM initial guess to be the same as the first one
         FWMH_max = width_peaks.max() # set the max FWHM to be the max width found from peak finding, knowing that re_height=0.5
         FWHM_min = width_peaks.min() # set the min FWHM to be the min width found from peak finding, knowing that re_height=0.5
-        Peak1_0 = T_normalised['nu_Hz'].iloc[idx_peaks[0]] # initial guess from peak finding
-        Peak2_0 = T_normalised['nu_Hz'].iloc[idx_peaks[1]] # initial guess from peak finding
+        Peak1_0 = T_normalised['nu_Hz'].iloc[idx_select[0]] # initial guess from peak finding
+        Peak2_0 = T_normalised['nu_Hz'].iloc[idx_select[1]] # initial guess from peak finding
         bounds_Doublet = F_Bounds_DoubleLorentzian(A1_0=A1_0, Rel_A1=param_rel_Doublet['Rel_A1'],
                                                 A2_0=A2_0, Rel_A2=param_rel_Doublet['Rel_A2'],
                                                 FWHM1_lower=FWHM_min, 
@@ -704,8 +717,8 @@ if __name__ == "__main__":
     # T_corrected = Q.load_data_singleQ(file_name=r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202509_2509SiN700A_Multipassage\mesurement\Laser fine tunning\D80\RR0.4.txt',
     #                                   model='FineScan',
     #                                   )
-    FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D75'
-    # FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/D75'
+    FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
+    FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/D80'
     # FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
     FileName = r'RRW1.1G0.5L1520.664F10mHzA2V.txt'
     # FileName = r'RRW1.1G0.5L1569.368F10mHzA5V.txt'
@@ -713,7 +726,7 @@ if __name__ == "__main__":
     FileName = r'RRW2.8G0.5L1628.594F5mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1534.283F10mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1530.243F10mHzA2V.txt'
-    FileName = r'RRW1.1G0.5L1609.707F10mHzA2V.txt'
+    FileName = r'RRW2.8G0.5L1627.895F10mHzA2V.txt'
     # RRW1.1G0.5L1570.515F510mHzA2V
     from F_GetConfig import F_GetConfig
     config = F_GetConfig(FileName = FileName)
@@ -729,14 +742,14 @@ if __name__ == "__main__":
     ax_T_normalised = Fig_T_normalised.add_subplot(111)
 
     param_find_peaks = {'distance':400,# in number of points
-                        'prominence':0.0003,# need to be adjusted according to the actual data
+                        'prominence':0.0001,# need to be adjusted according to the actual data
                         'width':5,# in number of points
                         'rel_height':1,# don't change this one
                         }
     param_rel = {'Rel_FWHM':0.2,
                  'Rel_A':0.2,
                  'Rel_Peak':0.2,
-                 'factor_remove_points':0.3,# factor to multiply the width to get the points to remove for Savgol filtering
+                 'factor_remove_points':0.6,# factor to multiply the width to get the points to remove for Savgol filtering
         }
     from F_FindPeaks import F_SelectPeaks
     # param_find_peaks = F_SelectPeaks(T_corrected['T_linear'].values, param_find_peaks, num_peaks=5)
@@ -752,17 +765,20 @@ if __name__ == "__main__":
 
     Fig_Doublet = plt.figure()
     ax_Doublet = Fig_Doublet.add_subplot(111)
-    param_find_DoubletResonance = {'distance':11,
-                                'prominence':0.1,
-                                'width':2.5,
-                                'rel_height':0.5,}
+    param_find_DoubletResonance = {'distance':2,
+                                'prominence':0.08,
+                                'width':2,
+                                'rel_height':0.5,
+                                } # don't add random stuff here, only the parameters suitable for scipy.find_peaks
     
     param_rel_Doublet = {'Rel_A1':0.99,
                          'Rel_A2':0.99,
                         #  'Rel_FWHM1':0.8,
                         #  'Rel_FWHM2':0.8,
                          'Rel_Peak1': 0.8,
-                         'Rel_Peak2':0.8,}
+                         'Rel_Peak2':0.8,
+                         '1st peak':0, # multiple peaks found, choose which the one as the first peak
+                         '2nd peak':1,}# multiple peaks found, choose which the one as the second peak
     
     opt_Doublet, pcov_Doublet, f_func_DoubleLorentzian = Q.Q_FitDoubletResonance(T_normalised,
                                                                                 center_wl_nm=config['wavelength_nm'],

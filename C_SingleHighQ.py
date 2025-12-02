@@ -718,7 +718,7 @@ if __name__ == "__main__":
     #                                   model='FineScan',
     #                                   )
     FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
-    FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/D80'
+    FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/D75'
     # FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
     FileName = r'RRW1.1G0.5L1520.664F10mHzA2V.txt'
     # FileName = r'RRW1.1G0.5L1569.368F10mHzA5V.txt'
@@ -726,7 +726,7 @@ if __name__ == "__main__":
     FileName = r'RRW2.8G0.5L1628.594F5mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1534.283F10mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1530.243F10mHzA2V.txt'
-    FileName = r'RRW2.8G0.5L1627.895F10mHzA2V.txt'
+    FileName = r'RRW2.8G0.5L1628.594F5mHzA2V.txt'
     # RRW1.1G0.5L1570.515F510mHzA2V
     from F_GetConfig import F_GetConfig
     config = F_GetConfig(FileName = FileName)
@@ -749,7 +749,7 @@ if __name__ == "__main__":
     param_rel = {'Rel_FWHM':0.2,
                  'Rel_A':0.2,
                  'Rel_Peak':0.2,
-                 'factor_remove_points':0.6,# factor to multiply the width to get the points to remove for Savgol filtering
+                 'factor_remove_points':0.2,# factor to multiply the width to get the points to remove for Savgol filtering
         }
     from F_FindPeaks import F_SelectPeaks
     # param_find_peaks = F_SelectPeaks(T_corrected['T_linear'].values, param_find_peaks, num_peaks=5)
@@ -848,69 +848,3 @@ if __name__ == "__main__":
     
     
     
-    
-    '''
-    ### find the peak
-    idx_peaks, properties_peaks, right_ips, left_ips, width_peaks,properties_peaks_half = Q.Q_FindPeak(T_corrected, ax = ax_T)
-    points_to_remove = (right_ips - left_ips).astype(int)
-    ### fit the back ground offset using Savgol filter
-    from F_RemoveOffsetSavgol import RemoveOffset_Savgol
-
-    T_normalised, offset = Q.Q_RemoveOffset_Savgol(
-        T_corrected,
-        idx_peaks,
-        window_length=9,
-        polyorder=2,
-        points_to_remove=points_to_remove[0]+10,
-        ax=ax_T
-    )
-
-    Fig_T_normalised = plt.figure()
-    ax_T_normalised = Fig_T_normalised.add_subplot(111)
-    ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6, T_normalised['T_linear'],label='Savgol corrected normalised T',
-                         alpha=0.7)
-    ax_T_normalised.set_xlabel('Frequency (MHz)')
-    ax_T_normalised.set_ylabel('T linear scale')
-    ax_T_normalised.legend()
-
-    ### fitting the resonance to get Q factor and other parameters
-    # step 1: choose the bounds for fitting
-    # try to refind the best bounds for Lorentian fitting
-    from F_Bounds import F_Bounds_SingleLorentzian
-    # bound for A, HWHM, lbd_res
-    # A
-    A0 = properties_peaks['prominences'][0] # initial guess from peak finding
-    Rel_A = 0.2
-    # FWHM
-    FWHM0 = properties_peaks['FWHM'][0] # initial guess from peak finding
-    Rel_FWHM = 0.2
-    # Peak position
-    Peak0 = T_normalised['nu_Hz'].iloc[idx_peaks[0]] # initial guess from peak finding
-    Rel_Peak = 0.2
-    bounds = F_Bounds_SingleLorentzian(
-        A0=A0, Rel_A=Rel_A,
-        FWHM0=FWHM0, Rel_FWHM=Rel_FWHM,
-        Peak0=Peak0, Rel_Peak=Rel_Peak
-    )
-    # step2: fitting using Lorentzian model with bounds
-    from F_LorentzianModel import f_locatized
-    opt, pcov, f_func_Lorentzian = f_locatized(
-        nu_res=T_normalised['nu_Hz'].to_numpy(),
-        signal_res=T_normalised['T_linear'].to_numpy(),
-        bounds=bounds, model='SingleLorentzian')
-    fitting_options = {
-        'A': opt[0],
-        'FWHM': opt[1],
-        'res': opt[2],
-    }
-    from F_QFactor import F_QFactor
-    Q_factor = F_QFactor(
-        nu_peak=wl2nu(1550),
-        FWHM=fitting_options['FWHM']
-    )
-
-    ax_T_normalised.plot(T_normalised['nu_Hz']*1e-6,
-                          f_func_Lorentzian(T_normalised['nu_Hz'], *opt),
-                          label=f'Lorentzian Fit Q={Q_factor*1e-6:.2f}M', linestyle='--')  
-    ax_T_normalised.legend()
-    '''

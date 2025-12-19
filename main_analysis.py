@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         self.param_fields = {}
         # Adding parameter fields dynamically based on initial values
         self.add_param_field(param_layout, "Param_RingResonator", {'diameter': 200, 'width': 1100, 'range_wl': [1500, 1640]})
-        self.add_param_field(param_layout, "Param_find_peaks", {'distance': 1600, 'prominence': 0.001})
+        self.add_param_field(param_layout, "Param_find_peaks", {'distance': 1600, 'prominence': 0.001, 'width': 4,'rel_height': 1})
         self.add_param_field(param_layout, "Param_Savgol_fitting", {'window_length': 101, 'points_to_remove': 151, 'polyorder': 2})
         self.add_param_field(param_layout, "Param_peaks_fitting", {'peak_range_nm': 1, 'A_margin': 0.02})
         self.add_param_field(param_layout, "Param_FSR_fitting", {'fitting_order': 2, 'nb_sigma': 3})
@@ -148,7 +148,17 @@ class MainWindow(QMainWindow):
         for name, button in self.plot_buttons.items():
             button.clicked.connect(self.show_plot)
             analysis_button_layout.addWidget(button)
-        
+
+        # add a button to save the current parameters
+        self.button_save_params = QPushButton('Save Parameters')
+        analysis_button_layout.addWidget(self.button_save_params)
+        # connect the button to a function
+        self.button_save_params.clicked.connect(lambda: self.save_current_params())
+        # add a button to load the parameters from a text file
+        self.button_load_params = QPushButton('Load Parameters')
+        analysis_button_layout.addWidget(self.button_load_params)
+        # connect the button to a function
+        self.button_load_params.clicked.connect(lambda: self.load_params_from_file())
         
         # Load default CSV file on startup
         self.default_csv_path = r'test_W1100_R100um_G400_AfterAnnealing.csv'
@@ -237,7 +247,9 @@ class MainWindow(QMainWindow):
                                'width': params['Param_RingResonator_width'],
                                'range_wl': params['Param_RingResonator_range_wl']}
         self.Param_find_peaks = {'distance': params['Param_find_peaks_distance'],
-                            'prominence': params['Param_find_peaks_prominence'],}
+                            'prominence': params['Param_find_peaks_prominence'],
+                            'width': params['Param_find_peaks_width'],
+                            'rel_height': params['Param_find_peaks_rel_height']}
         self.Param_Savgol_fitting = {'window_length':params['Param_Savgol_fitting_window_length'],
                         'points_to_remove':params['Param_Savgol_fitting_points_to_remove'],
                         'polyorder':params['Param_Savgol_fitting_polyorder']}
@@ -328,7 +340,35 @@ class MainWindow(QMainWindow):
                     # Plot the offset in grey
                 self.plot_widget.plot(T['wavelength_nm'],T['T_dB'], pen=pg.mkPen(color='gray', width=2))
                 self.offset_data = T
-    
+    def save_current_params(self):
+        """Save the current parameters to a text file."""
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getSaveFileName(self, "Save Parameters", "", "Text Files (*.txt);;All Files (*)", options=options)
+        
+        if file_name:
+            try:
+                with open(file_name, 'w') as f:
+                    for name, field in self.param_fields.items():
+                        f.write(f"{name}: {field.text()}\n")
+                print(f"Parameters saved to {file_name}")
+            except Exception as e:
+                print(f"Error saving parameters: {e}")
+    def load_params_from_file(self):
+        """Load parameters from a text file and update the input fields."""
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getOpenFileName(self, "Load Parameters", "", "Text Files (*.txt);;All Files (*)", options=options)
+        
+        if file_name:
+            try:
+                with open(file_name, 'r') as f:
+                    for line in f:
+                        name, value = line.strip().split(': ', 1)
+                        if name in self.param_fields:
+                            self.param_fields[name].setText(value)
+                print(f"Parameters loaded from {file_name}")
+            except Exception as e:
+                print(f"Error loading parameters: {e}")
+
 # =============================================================================
 #     new functions defined by Yijun YANG
 # =============================================================================

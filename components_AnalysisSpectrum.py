@@ -124,7 +124,7 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
     return T
 '''
 
-def find_peaks_for_FSR(frequency_Hz,transmission_linear,**param_find_peaks):
+def find_peaks_for_FSR(T, ax=None, **param_find_peaks):
     """ find peaks for FSR and pepareing for resonances fitting 
         Keyword Args:
            * **frequency_Hz** : the frequency in Hz (converted from wavelength).
@@ -139,8 +139,49 @@ def find_peaks_for_FSR(frequency_Hz,transmission_linear,**param_find_peaks):
     else:
         param_find_peaks = {'distance':2000*0.8,
                             'prominence':0.0001}
-    idx_peaks, _ = find_peaks(-transmission_linear, **param_find_peaks)# when in linear unit
+    idx_peaks, properties_peaks = find_peaks(-T['T_linear'], **param_find_peaks)# when in linear unit
+    # handle the case when no peaks are found
+    if len(idx_peaks) <= 3:
+        print("Warning: Too few or no peaks found with the given parameters.")
+        
+        # sys.exit()
     peaks = pd.DataFrame(data = {'idx_peaks':idx_peaks,})
+    
+    promences = properties_peaks['prominences']
+    # Calculate the height of each peak’s contour line and plot the results
+    contour_heights = T['T_linear'][idx_peaks] + promences
+    # Find all peaks and calculate their widths at the relative height of 0.5 (contour line at half the prominence height) 
+    # and 1 (at the lowest contour line at full prominence height).
+    width_heights = -properties_peaks['width_heights']
+    left_ips = properties_peaks['left_ips'].astype(int)
+    right_ips = properties_peaks['right_ips'].astype(int)
+    width_peaks = T['nu_Hz'].iloc[right_ips].to_numpy() - T['nu_Hz'].iloc[left_ips].to_numpy()
+    
+
+    # find width at half prominence, use rel_height=0.5, to get FWHM
+    param_find_peaks['rel_height'] = 0.5
+    idx_peaks_2,properties_peaks_half = find_peaks(-T['T_linear'], **param_find_peaks)
+    FWHM_peaks = properties_peaks_half['widths'] * (T['nu_Hz'].iloc[10]-T['nu_Hz'].iloc[9])
+    properties_peaks['FWHM'] = FWHM_peaks
+
+    if ax:
+        ax.plot(T['wavelength_nm'][idx_peaks],
+                T['T_linear'][idx_peaks],
+                'o')
+        
+        ax.vlines(x=T['wavelength_nm'][idx_peaks], ymin=contour_heights, ymax=T['T_linear'][idx_peaks],
+                    linestyles="dashdot", color="C1",label='prominence')
+        
+        # ax.hlines(width_heights, T['wavelength_nm'].iloc[left_ips].values, T['wavelength_nm'].iloc[right_ips].values, 
+        #             linestyles='--',color="C2",label='widths at prominence')
+        ax.hlines(-properties_peaks_half['width_heights'], T['wavelength_nm'].iloc[properties_peaks_half['left_ips']].values, 
+                    T['wavelength_nm'].iloc[properties_peaks_half['right_ips']].values, 
+                    linestyles=':',color="C3",label='FWHM')
+        ax.set_title('Peak Finding Results')
+        ax.legend()
+        
+        
+    
     return peaks
 #%%
 def calcul_FSR(frequency_Hz,transmission_linear,idx_peaks):
@@ -390,7 +431,7 @@ def RemoveOffset_Savgol(wavelength, transmission, idx, window_length=101, polyor
     # Step 3: Use linear interpolation to fill in the regions around resonances
     transmission_filtered = pd.Series(transmission_filtered)
     transmission_filtered[~mask] = np.nan  # Mark the resonance regions as NaN
-    transmission_filtered = transmission_filtered.interpolate(method='cubic').to_numpy() # the interpolate method may be changed to have a better interpolation.
+    transmission_filtered = transmission_filtered.interpolate(method='linear').to_numpy() # the interpolate method may be changed to have a better interpolation.
 
     # Step 4: Subtract the background from the original transmission data
     # transmission_corrected = transmission - transmission_filtered + 1  # Add 1 to maintain baseline around 1
@@ -596,7 +637,7 @@ def analysis_main(T,
     '''
     find peaks
     '''
-    peaks = find_peaks_for_FSR(T['nu_Hz'],T['T_linear'],**Param_find_peaks)
+    peaks = find_peaks_for_FSR(T,ax = ax_T, **Param_find_peaks)
     ax_T.plot(nu2wl(T['nu_Hz'][peaks['idx_peaks']]),T['T_linear'][peaks['idx_peaks']],"x",label = 'resonance')
     ax_T.legend()
     # ax_T.legend(**Param_legend)

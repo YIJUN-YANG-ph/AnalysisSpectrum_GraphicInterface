@@ -719,6 +719,10 @@ if __name__ == "__main__":
     #                                   )
     FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
     FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/D75'
+    FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\EdgeCoupler\D85'
+    FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/EdgeCoupler/D85'
+    FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/EdgeCoupler/D85 251208'
+
     # FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
     FileName = r'RRW1.1G0.5L1520.664F10mHzA2V.txt'
     # FileName = r'RRW1.1G0.5L1569.368F10mHzA5V.txt'
@@ -727,6 +731,9 @@ if __name__ == "__main__":
     FileName = r'RRW1.1G0.5L1534.283F10mHzA2V.txt'
     FileName = r'RRW1.1G0.5L1530.243F10mHzA2V.txt'
     FileName = r'RRW2.8G0.5L1628.594F5mHzA2V.txt'
+    FileName = r'RRW1.1G0.5L1522.856F10mHzA2V.txt'
+    FileName = r'RRW1.1G0.5L1521.197F5mHzA2V.txt'
+    FileName = r'RRW1.1G0.5L1521.181F5mHzA2V.txt'
     # RRW1.1G0.5L1570.515F510mHzA2V
     from F_GetConfig import F_GetConfig
     config = F_GetConfig(FileName = FileName)
@@ -749,7 +756,7 @@ if __name__ == "__main__":
     param_rel = {'Rel_FWHM':0.2,
                  'Rel_A':0.2,
                  'Rel_Peak':0.2,
-                 'factor_remove_points':0.2,# factor to multiply the width to get the points to remove for Savgol filtering
+                 'factor_remove_points':1.1,# factor to multiply the width to get the points to remove for Savgol filtering
         }
     from F_FindPeaks import F_SelectPeaks
     # param_find_peaks = F_SelectPeaks(T_corrected['T_linear'].values, param_find_peaks, num_peaks=5)
@@ -766,7 +773,7 @@ if __name__ == "__main__":
     Fig_Doublet = plt.figure()
     ax_Doublet = Fig_Doublet.add_subplot(111)
     param_find_DoubletResonance = {'distance':2,
-                                'prominence':0.08,
+                                'prominence':0.2,
                                 'width':2,
                                 'rel_height':0.5,
                                 } # don't add random stuff here, only the parameters suitable for scipy.find_peaks
@@ -775,8 +782,8 @@ if __name__ == "__main__":
                          'Rel_A2':0.99,
                         #  'Rel_FWHM1':0.8,
                         #  'Rel_FWHM2':0.8,
-                         'Rel_Peak1': 0.8,
-                         'Rel_Peak2':0.8,
+                         'Rel_Peak1': 0.01,
+                         'Rel_Peak2':0.01,
                          '1st peak':0, # multiple peaks found, choose which the one as the first peak
                          '2nd peak':1,}# multiple peaks found, choose which the one as the second peak
     

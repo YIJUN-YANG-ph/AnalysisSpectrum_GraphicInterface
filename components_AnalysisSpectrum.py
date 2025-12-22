@@ -124,7 +124,7 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
     return T
 '''
 
-def find_peaks_for_FSR(T, ax=None, **param_find_peaks):
+def find_peaks_for_FSR(T, ax=None, **param_find_peaks)->tuple:
     """ find peaks for FSR and pepareing for resonances fitting 
         Keyword Args:
            * **frequency_Hz** : the frequency in Hz (converted from wavelength).
@@ -132,6 +132,7 @@ def find_peaks_for_FSR(T, ax=None, **param_find_peaks):
            * **???** : ???
         Returns:
            * **peaks** : pandas dataframe. idx_peaks: the index the peaks in input frequency_Hz.
+           * **properties_peaks** : dict. properties of the peaks found by scipy.signal.find_peaks.
     """
     from scipy.signal import find_peaks
     if param_find_peaks:
@@ -160,8 +161,12 @@ def find_peaks_for_FSR(T, ax=None, **param_find_peaks):
 
     # find width at half prominence, use rel_height=0.5, to get FWHM
     param_find_peaks['rel_height'] = 0.5
-    idx_peaks_2,properties_peaks_half = find_peaks(-T['T_linear'], **param_find_peaks)
-    FWHM_peaks = properties_peaks_half['widths'] * (T['nu_Hz'].iloc[10]-T['nu_Hz'].iloc[9])
+    from scipy.signal import chirp, find_peaks, peak_widths
+    # find the peak width when the height is half of the prominence
+    results_half = peak_widths(-T['T_linear'], idx_peaks, rel_height=0.5)
+    # idx_peaks_2,properties_peaks_half = find_peaks(-T['T_linear'], **param_find_peaks)
+    # FWHM_peaks = properties_peaks_half['widths'] * (T['nu_Hz'].iloc[10]-T['nu_Hz'].iloc[9])
+    FWHM_peaks = results_half[0] * (T['nu_Hz'].iloc[10]-T['nu_Hz'].iloc[9])
     properties_peaks['FWHM'] = FWHM_peaks
 
     if ax:
@@ -174,15 +179,19 @@ def find_peaks_for_FSR(T, ax=None, **param_find_peaks):
         
         # ax.hlines(width_heights, T['wavelength_nm'].iloc[left_ips].values, T['wavelength_nm'].iloc[right_ips].values, 
         #             linestyles='--',color="C2",label='widths at prominence')
-        ax.hlines(-properties_peaks_half['width_heights'], T['wavelength_nm'].iloc[properties_peaks_half['left_ips']].values, 
-                    T['wavelength_nm'].iloc[properties_peaks_half['right_ips']].values, 
+        # ax.hlines(-properties_peaks_half['width_heights'], T['wavelength_nm'].iloc[properties_peaks_half['left_ips']].values, 
+        #             T['wavelength_nm'].iloc[properties_peaks_half['right_ips']].values, 
+        #             linestyles=':',color="C3",label='FWHM')
+        ax.hlines(-results_half[1], # width_heights
+                  T['wavelength_nm'].iloc[results_half[2]].values, # left_ips
+                    T['wavelength_nm'].iloc[results_half[3]].values, # right_ips
                     linestyles=':',color="C3",label='FWHM')
         ax.set_title('Peak Finding Results')
         ax.legend()
         
         
     
-    return peaks
+    return peaks, properties_peaks
 #%%
 def calcul_FSR(frequency_Hz,transmission_linear,idx_peaks):
     """ Calculate FSR: free spectral range.
@@ -300,7 +309,11 @@ def f_locatized(nu_res,signal_res,bounds):
     popt, pcov = curve_fit(f_func_Lorentzian,nu_res,signal_res, bounds=bounds)
     return popt, pcov, f_func_Lorentzian,f_coupler
 
-def resonances_fitting(wavelength_nm,transmission_linear,idx_res,peak_range_nm = 1,A_margin = 0.02):
+def resonances_fitting(wavelength_nm,transmission_linear,
+                       idx_res,
+                       properties_peaks,
+                       peak_range_nm = 1,A_margin = 0.02
+                       ):
     """ To fit the resonance with Lorentzian model.
         Comments by Yijun
         Args:
@@ -352,13 +365,41 @@ def resonances_fitting(wavelength_nm,transmission_linear,idx_res,peak_range_nm =
 
         
         # try to refind the best bounds for Lorentian fitting
+        from F_Bounds import F_Bounds_SingleLorentzian
+        param_rel = {'Rel_FWHM':0.8,
+                         'Rel_A':0.8,
+                         'Rel_Peak':0.2,}
+        prominence_peak = properties_peaks['prominences'][i]
+        FWHM_peak = np.abs(properties_peaks['FWHM'][i])
+        rel_A = param_rel['Rel_A']
+        rel_FWHM = param_rel['Rel_FWHM']
+        rel_Peak = param_rel['Rel_Peak']
+        # bounds  = F_Bounds_SingleLorentzian(
+        #     A0=prominence_peak,Rel_A=rel_A,
+        #     FWHM0=FWHM_peak,Rel_FWHM=rel_FWHM,
+        #     Peak0=nu[idx],Rel_Peak =rel_Peak
+        # )
+
+    
         A_upper = 1-transmission_linear[idx] + A_margin
         A_lower = 0.01
-        # bounds set for (A, HWHM, lbd_res)
-        bounds = ([A_lower,0,wl2nu(wavelength_nm[idx]+0.02)],[A_upper,0.1*1e12,wl2nu(wavelength_nm[idx]-0.02)])
 
+        bounds  = F_Bounds_SingleLorentzian(
+            A_lower=A_lower,A_upper=A_upper,
+            FWHM0=FWHM_peak,Rel_FWHM=rel_FWHM,
+            Peak0=nu[idx],Rel_Peak =rel_Peak
+        )
+
+        
+        # bounds set for (A, HWHM, lbd_res)
+        # bounds = ([A_lower,0,wl2nu(wavelength_nm[idx]+0.02)],[A_upper,0.1*1e12,wl2nu(wavelength_nm[idx]-0.02)])
+        
+        
         # f_locatized: fitting function using Lorentizian 
-        popt, pcov, f_func_Lorentzian,f_coupler = f_locatized(nu_res,transmission_res,bounds)
+        # popt, pcov, f_func_Lorentzian,f_coupler = f_locatized(nu_res,transmission_res,bounds)
+        from F_LorentzianModel import f_locatized
+        popt, pcov, f_func_Lorentzian = f_locatized(nu_res,transmission_res,bounds)
+        
         
         
         # print('A; half width at half maximum (HWHM)(nm); resonance peak(nm)',*popt,sep='\n',end='\n')
@@ -367,19 +408,23 @@ def resonances_fitting(wavelength_nm,transmission_linear,idx_res,peak_range_nm =
 
         ''' Calculate Q factor'''
         nu_peak = popt[2]
-        FWHM = 2*popt[1]
+        # FWHM = 2*popt[1]
+        FWHM = popt[1]
         A = popt[0]
         Q = nu_peak/FWHM
         nu_peak_array[i] = nu_peak.copy()
         Q_array[i] = Q.copy()# Q factor
         FWHM_array[i] = FWHM # FWHM
         A_array[i] = A# to find out the extinction ratio
-        R_ext_array[i] = f_coupler(nu_peak)/(f_coupler(nu_peak)-A)
+        # R_ext_array[i] = f_coupler(nu_peak)/(f_coupler(nu_peak)-A)
+        R_ext_array[i] = 1/(1-A)# simplified version
         print('Q = ',Q,end='\n\n')
         
         # Append current nu_res and corresponding T_f_Lorentzian values
         nu_samples_list.extend(nu_res)
-        T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM/2, nu_peak))
+        # T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM/2, nu_peak))
+        T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM, nu_peak))
+
         
         i = i+1
     
@@ -637,7 +682,7 @@ def analysis_main(T,
     '''
     find peaks
     '''
-    peaks = find_peaks_for_FSR(T,ax = ax_T, **Param_find_peaks)
+    peaks, properties_peaks = find_peaks_for_FSR(T,ax = ax_T, **Param_find_peaks)
     ax_T.plot(nu2wl(T['nu_Hz'][peaks['idx_peaks']]),T['T_linear'][peaks['idx_peaks']],"x",label = 'resonance')
     ax_T.legend()
     # ax_T.legend(**Param_legend)
@@ -768,7 +813,11 @@ def analysis_main(T,
     '''
     a figure to shown fitting quality for resonances
     '''
-    peaks_f_params,peaks_fitted_points = resonances_fitting(T['wavelength_nm'],transmission_corrected,peaks['idx_peaks'],**Param_peaks_fitting)
+    peaks_f_params,peaks_fitted_points = resonances_fitting(T['wavelength_nm'],
+                                                            transmission_corrected,
+                                                            peaks['idx_peaks'],
+                                                            properties_peaks,
+                                                            **Param_peaks_fitting)
     
     Fig_peak_fitting,(ax_pf1,ax_pf2) = plt.subplots(nrows = 2,ncols=1,sharex=True,sharey = False,figsize = [10,6])
     manager = plt.get_current_fig_manager()

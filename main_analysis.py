@@ -48,10 +48,11 @@ import matplotlib
 from scipy.optimize import curve_fit
 
 import pandas as pd
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, 
                              QPushButton, QFileDialog, QHBoxLayout, QGridLayout,
-                             QLineEdit, QLabel)
+                             QLineEdit, QLabel, QScrollArea, QGroupBox,
+                             QFormLayout, QTextEdit)
 from PyQt5.QtGui import QFont
 
 import pyqtgraph as pg
@@ -71,95 +72,131 @@ class MainWindow(QMainWindow):
         self.T={}
         
         self.setWindowTitle('CSV Plotter with PyQtGraph')
-        self.setGeometry(100, 100, 600, 1200)
+        self.setGeometry(100, 100, 1200, 800)
 
-        # Create a central widget and set a vertical layout
+        # Central widget with horizontal split: controls left, plots right
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
 
-        # Create a PyQtGraph plot widget
-        self.plot_widget = pg.PlotWidget()
-        layout.addWidget(self.plot_widget)
-        # Set background to white
-        self.plot_widget.setBackground('w')
-        #inialize the legend
-        self.legend = self.plot_widget.addLegend(labelTextSize='10pt')
-        self.set_legend_style()
-        
-        # Create a second pyQtGraph plot widget, for presenting some simple operation on the spectrum.
-        self.plot_widget_operation = pg.PlotWidget()
-        layout.addWidget(self.plot_widget_operation)
-        # Set background to white
-        self.plot_widget_operation.setBackground('w')
-       
+        # ------------------------------------------------------------------
+        # Left panel: controls + parameters
+        # ------------------------------------------------------------------
+        controls_panel = QWidget()
+        controls_panel.setMinimumWidth(320)
+        controls_layout = QVBoxLayout(controls_panel)
+        controls_layout.setContentsMargins(8, 8, 8, 8)
+        controls_layout.setSpacing(10)
 
-        # Create horizontal layout for the buttons
-        button_layout = QHBoxLayout()
-        layout.addLayout(button_layout)
-        # Creat horizontal layout for analysis buttons
-        analysis_button_layout = QHBoxLayout()
-        layout.addLayout(analysis_button_layout)
-
-# =============================================================================
-#         # Create a button for loading CSV
-#         by default, the click.connect give a first parameter value False..
-#         Therefore, the lambda function is created to avoid given this False by default.
-# =============================================================================
+        # Top data buttons
+        top_buttons = QHBoxLayout()
         self.button = QPushButton('Import CSV')
         self.button.clicked.connect(lambda: self.load_csv())
-        layout.addWidget(self.button)
-        
-# =============================================================================
-#         # Parameter Input Fields
-# =============================================================================
-        param_layout = QGridLayout()
-        self.param_row_counter = 0  # Initialize row counter
-        self.param_fields = {}
-        # Adding parameter fields dynamically based on initial values
-        self.add_param_field(param_layout, "Param_RingResonator", {'diameter': 200, 'width': 1100, 'range_wl': [1500, 1640]})
-        self.add_param_field(param_layout, "Param_find_peaks", {'distance': 1600, 'prominence': 0.001, 'width': 4,'rel_height': 1})
-        self.add_param_field(param_layout, "Param_Savgol_fitting", {'window_length': 101, 'points_to_remove': 151, 'polyorder': 2})
-        self.add_param_field(param_layout, "Param_peaks_fitting", {'peak_range_nm': 1, 'A_margin': 0.02})
-        self.add_param_field(param_layout, "Param_FSR_fitting", {'fitting_order': 2, 'nb_sigma': 3})
-        self.add_param_field(param_layout, "Param_loss_calcul", {'wl_critical': 1535})
-        layout.addLayout(param_layout)
-
-        
-        # Create the "Add Offset" button (smaller size)
         self.button_offset = QPushButton('Add Offset')
         self.button_offset.clicked.connect(self.load_offset)
-        button_layout.addWidget(self.button_offset)
-
-        # Create the "Operator" button (smaller size)
         self.button_operator = QPushButton('Operator')
         self.button_operator.clicked.connect(lambda: self.calculate_difference_yijun())
-        button_layout.addWidget(self.button_operator)
-        
-        
-        
-        # Buttons for different plots for analysis
+        top_buttons.addWidget(self.button)
+        top_buttons.addWidget(self.button_offset)
+        top_buttons.addWidget(self.button_operator)
+        controls_layout.addLayout(top_buttons)
+
+        # Analysis buttons
+        analysis_buttons = QGridLayout()
         self.plot_buttons = {
             "Show Figure 1": QPushButton("Analyze"),
             "Show Figure 4": QPushButton("arrange wavelength"),
             "Show Figure 2": QPushButton("Close all"),
             "Show Figure 3": QPushButton("Clear all"),
         }
-        for name, button in self.plot_buttons.items():
+        for idx, (name, button) in enumerate(self.plot_buttons.items()):
             button.clicked.connect(self.show_plot)
-            analysis_button_layout.addWidget(button)
+            analysis_buttons.addWidget(button, idx // 2, idx % 2)
+        controls_layout.addLayout(analysis_buttons)
 
-        # add a button to save the current parameters
+        # Save/load parameters row
+        param_file_buttons = QHBoxLayout()
         self.button_save_params = QPushButton('Save Parameters')
-        analysis_button_layout.addWidget(self.button_save_params)
-        # connect the button to a function
         self.button_save_params.clicked.connect(lambda: self.save_current_params())
-        # add a button to load the parameters from a text file
         self.button_load_params = QPushButton('Load Parameters')
-        analysis_button_layout.addWidget(self.button_load_params)
-        # connect the button to a function
         self.button_load_params.clicked.connect(lambda: self.load_params_from_file())
-        
+        param_file_buttons.addWidget(self.button_save_params)
+        param_file_buttons.addWidget(self.button_load_params)
+        controls_layout.addLayout(param_file_buttons)
+
+        # Parameter groups inside a scroll area
+        self.param_fields = {}
+        param_container = QWidget()
+        param_container_layout = QVBoxLayout(param_container)
+        param_container_layout.setContentsMargins(0, 0, 0, 0)
+        param_container_layout.setSpacing(8)
+
+        self.add_param_group(param_container_layout, "Ring Resonator", "Param_RingResonator", {
+            'diameter': 200,
+            'width': 1100,
+            'range_wl': [1500, 1640]
+        })
+        self.add_param_group(param_container_layout, "Peak Finding", "Param_find_peaks", {
+            'distance': 1600,
+            'prominence': 0.001,
+            'width': 4,
+            'rel_height': 1
+        })
+        self.add_param_group(param_container_layout, "Savgol Smoothing", "Param_Savgol_fitting", {
+            'window_length': 101,
+            'points_to_remove': 151,
+            'polyorder': 2
+        })
+        self.add_param_group(param_container_layout, "Peak Fitting", "Param_peaks_fitting", {
+            'peak_range_nm': 1,
+            'A_margin': 0.02
+        })
+        self.add_param_group(param_container_layout, "FSR Fitting", "Param_FSR_fitting", {
+            'fitting_order': 2,
+            'nb_sigma': 3
+        })
+        self.add_param_group(param_container_layout, "Loss Calculation", "Param_loss_calcul", {
+            'wl_critical': 1535
+        })
+        param_container_layout.addStretch(1)
+
+        param_scroll = QScrollArea()
+        param_scroll.setWidgetResizable(True)
+        param_scroll.setWidget(param_container)
+        controls_layout.addWidget(param_scroll)
+
+        # Analysis results panel
+        self.results_output = QTextEdit()
+        self.results_output.setReadOnly(True)
+        self.results_output.setPlaceholderText("Analysis Results / Errors will appear here...")
+        controls_layout.addWidget(QLabel("Analysis Results"))
+        controls_layout.addWidget(self.results_output)
+
+        controls_layout.addStretch(1)
+        main_layout.addWidget(controls_panel, 0)
+
+        # ------------------------------------------------------------------
+        # Right panel: stacked plots (top: spectrum, bottom: operations)
+        # ------------------------------------------------------------------
+        plots_panel = QWidget()
+        plots_layout = QVBoxLayout(plots_panel)
+        plots_layout.setContentsMargins(0, 0, 0, 0)
+        plots_layout.setSpacing(8)
+
+        # Main spectrum plot (top)
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setBackground('w')
+        self.legend = self.plot_widget.addLegend(labelTextSize='10pt')
+        self.set_legend_style()
+        plots_layout.addWidget(self.plot_widget)
+
+        # Operation plot (bottom)
+        self.plot_widget_operation = pg.PlotWidget()
+        self.plot_widget_operation.setBackground('w')
+        plots_layout.addWidget(self.plot_widget_operation)
+
+        main_layout.addWidget(plots_panel, 1)
+
         # Load default CSV file on startup
         self.default_csv_path = r'test_W1100_R100um_G400_AfterAnnealing.csv'
         self.load_csv(file_name = self.default_csv_path)
@@ -172,6 +209,7 @@ class MainWindow(QMainWindow):
         
         sender = self.sender().text()
         print(f"Generating plot for: {sender}")
+        self.log_message(f"Action: {sender}")
         # Implement logic to generate the requested plot based on sender and updated parameters
         
         # Example logic placeholder
@@ -187,10 +225,12 @@ class MainWindow(QMainWindow):
                           self.Param_peaks_fitting,
                           self.Param_FSR_fitting,
                           self.Param_loss_calcul,
-                          )   
+                          )
+            self.log_message("Analysis completed.")
         elif sender == "Close all":
             # if hasattr(self, 'Fig_FSR') is not None:
             plt.close('all')
+            self.log_message("Closed all Matplotlib figures.")
         elif sender == "Clear all":
             print('All the data has been deleted, yeah!!!!!!!!!\n')
             self.T = {}
@@ -199,26 +239,27 @@ class MainWindow(QMainWindow):
             self.plot_widget_operation.clear()
             self.plot_widget.clear()
             # self.calculate_difference_yijun()
+            self.log_message("Cleared data and plots.")
         elif sender == "arrange wavelength":
             self.arrange_wl_range()
+            self.log_message("Arranged wavelength range on operation plot.")
     
+    def log_message(self, message):
+        """Append a message to the results panel."""
+        self.results_output.append(message)
+        self.results_output.verticalScrollBar().setValue(self.results_output.verticalScrollBar().maximum())
     
-    def add_param_field(self, layout, param_name, default_values):
-        # Get the current row count to place new widgets below the existing ones
-        # current_row = layout.rowCount()
-        
-        # Add fields for each parameter in the given dictionary
-        for row, (key, value) in enumerate(default_values.items()):
-            label = QLabel(f"{param_name} - {key}:")
+    def add_param_group(self, parent_layout, title, param_name, default_values):
+        """Create a titled parameter group with labelled inputs."""
+        group = QGroupBox(title)
+        form = QFormLayout()
+        form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        for key, value in default_values.items():
             field = QLineEdit(str(value))
-            layout.addWidget(label, self.param_row_counter, 0)
-            layout.addWidget(field, self.param_row_counter, 1)
-            layout.addWidget(QLabel('testttt'), row, 2)
-
             self.param_fields[f"{param_name}_{key}"] = field
-            
-            # Move to the next row for the next set of widgets
-            self.param_row_counter += 1  #  row counter += 1
+            form.addRow(QLabel(key), field)
+        group.setLayout(form)
+        parent_layout.addWidget(group)
             
             
     def retrieve_params(self):

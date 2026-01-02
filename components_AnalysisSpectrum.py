@@ -366,7 +366,7 @@ def resonances_fitting(wavelength_nm,transmission_linear,
         
         # try to refind the best bounds for Lorentian fitting
         from F_Bounds import F_Bounds_SingleLorentzian
-        param_rel = {'Rel_FWHM':0.8,
+        param_rel = {'Rel_FWHM':0.99,
                          'Rel_A':0.8,
                          'Rel_Peak':0.2,}
         prominence_peak = properties_peaks['prominences'][i]

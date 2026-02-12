@@ -314,132 +314,81 @@ def resonances_fitting(wavelength_nm,transmission_linear,
                        properties_peaks,
                        peak_range_nm = 1,A_margin = 0.02
                        ):
-    """ To fit the resonance with Lorentzian model.
-        Comments by Yijun
-        Args:
-           * **wavelength_nm** (np.array or pd.Series): wavelength in nm
-           * **transmission** (np.array or pd.Series): transmission in linear scale.
-           * **idx_res** (pd.Series): the index that indicates where the resonances are.
-           * **peak_range_nm** (float): the wavelength range around one resonance that can define a peak.
-           * **A_margin** (float): a margin for A fitting, the amplitude of the peak
-
-           
-        Outputs:
-           * **peaks_f_param** (pd.dataframe): parameters for the Lorentizan fitting
-                                             'frequency_0_f':nu_peak,central frequency
-                                             'FWHM_f':FWHM,
-                                             'A_f':A,
-                                             'Q_f':Q,
-           * **peaks_fitted** (pd.dataframe): sampled fitted peaks.
-                                               'nu_samples': nu_samples_list,
-                                               'T_f_Lorentzian': T_f_Lorentzian_list
-    """
-    ##########################################################################
-    nu_peak_array = np.arange(np.size(idx_res),dtype=float)
-    Q_array = np.arange(np.size(idx_res),dtype=float)
-    FWHM_array = np.arange(np.size(idx_res),dtype=float)
-    A_array = np.arange(np.size(idx_res),dtype=float)
-    R_ext_array = np.arange(np.size(idx_res),dtype=float)
-    # Lists to store nu_res and T_f_Lorentzian from all resonances
+    """Lorentzian fit for each resonance; continues past failures so one bad peak doesn't block the run."""
+    nu_peak_list = []
+    Q_list = []
+    FWHM_list = []
+    A_list = []
+    R_ext_list = []
     nu_samples_list = []
     T_f_Lorentzian_list = []
-    
-    i = 0
-    for idx in idx_res:
-        """ Do fitting using Lorentian distribution for each resonance
-            Comments by Yijun:
-            1. select the resonance range nu_res
-            2. find transmission data in the resonance range transmission_res
-            
-        """
-        # peak_range_nm = 1 #OHYP13, nm around each resonance
-        nu = wl2nu(wavelength_nm)
-        nu_res_1 = wl2nu(wavelength_nm[idx]+peak_range_nm/2)
-        nu_res_2 = wl2nu(wavelength_nm[idx]-peak_range_nm/2)
-        #nu_res = np.linspace(nu_res_1, nu_res_2,128)
-        idx_res = np.where((nu>nu_res_1) & (nu<nu_res_2))# idx_res is a tuple
-        idx_res = idx_res[0]# idx_res is a np array
-        # idx_res.tolist()
-        nu_res = nu[idx_res]
-        transmission_res = transmission_linear[idx_res]
+    failed = []
 
-        
-        # try to refind the best bounds for Lorentian fitting
-        from F_Bounds import F_Bounds_SingleLorentzian
-        param_rel = {'Rel_FWHM':0.99,
+    for i, idx in enumerate(idx_res):
+        try:
+            nu = wl2nu(wavelength_nm)
+            nu_res_1 = wl2nu(wavelength_nm[idx]+peak_range_nm/2)
+            nu_res_2 = wl2nu(wavelength_nm[idx]-peak_range_nm/2)
+            idx_res_local = np.where((nu>nu_res_1) & (nu<nu_res_2))[0]
+            nu_res = nu[idx_res_local]
+            transmission_res = transmission_linear[idx_res_local]
+
+            from F_Bounds import F_Bounds_SingleLorentzian
+            param_rel = {'Rel_FWHM':0.99,
                          'Rel_A':0.8,
                          'Rel_Peak':0.2,}
-        prominence_peak = properties_peaks['prominences'][i]
-        FWHM_peak = np.abs(properties_peaks['FWHM'][i])
-        rel_A = param_rel['Rel_A']
-        rel_FWHM = param_rel['Rel_FWHM']
-        rel_Peak = param_rel['Rel_Peak']
-        # bounds  = F_Bounds_SingleLorentzian(
-        #     A0=prominence_peak,Rel_A=rel_A,
-        #     FWHM0=FWHM_peak,Rel_FWHM=rel_FWHM,
-        #     Peak0=nu[idx],Rel_Peak =rel_Peak
-        # )
+            prominence_peak = properties_peaks['prominences'][i]
+            FWHM_peak = np.abs(properties_peaks['FWHM'][i])
+            rel_A = param_rel['Rel_A']
+            rel_FWHM = param_rel['Rel_FWHM']
+            rel_Peak = param_rel['Rel_Peak']
 
-    
-        A_upper = 1-transmission_linear[idx] + A_margin
-        A_lower = 0.01
+            A_upper = 1-transmission_linear[idx] + A_margin
+            A_lower = 0.01
 
-        bounds  = F_Bounds_SingleLorentzian(
-            A_lower=A_lower,A_upper=A_upper,
-            FWHM0=FWHM_peak,Rel_FWHM=rel_FWHM,
-            Peak0=nu[idx],Rel_Peak =rel_Peak
-        )
+            bounds  = F_Bounds_SingleLorentzian(
+                A_lower=A_lower,A_upper=A_upper,
+                FWHM0=FWHM_peak,Rel_FWHM=rel_FWHM,
+                Peak0=nu[idx],Rel_Peak =rel_Peak
+            )
 
-        
-        # bounds set for (A, HWHM, lbd_res)
-        # bounds = ([A_lower,0,wl2nu(wavelength_nm[idx]+0.02)],[A_upper,0.1*1e12,wl2nu(wavelength_nm[idx]-0.02)])
-        
-        
-        # f_locatized: fitting function using Lorentizian 
-        # popt, pcov, f_func_Lorentzian,f_coupler = f_locatized(nu_res,transmission_res,bounds)
-        from F_LorentzianModel import f_locatized
-        popt, pcov, f_func_Lorentzian = f_locatized(nu_res,transmission_res,bounds)
-        
-        
-        
-        # print('A; half width at half maximum (HWHM)(nm); resonance peak(nm)',*popt,sep='\n',end='\n')
-        print(f'A: {popt[0]}\nHalf width at half maximum (HWHM) (Hz): {popt[1]}\nResonance peak (Hz): {popt[2]}\n')
+            from F_LorentzianModel import f_locatized
+            popt, pcov, f_func_Lorentzian = f_locatized(nu_res,transmission_res,bounds)
 
+            nu_peak = popt[2]
+            FWHM = popt[1]
+            A = popt[0]
+            Q = nu_peak/FWHM
 
-        ''' Calculate Q factor'''
-        nu_peak = popt[2]
-        # FWHM = 2*popt[1]
-        FWHM = popt[1]
-        A = popt[0]
-        Q = nu_peak/FWHM
-        nu_peak_array[i] = nu_peak.copy()
-        Q_array[i] = Q.copy()# Q factor
-        FWHM_array[i] = FWHM # FWHM
-        A_array[i] = A# to find out the extinction ratio
-        # R_ext_array[i] = f_coupler(nu_peak)/(f_coupler(nu_peak)-A)
-        R_ext_array[i] = 1/(1-A)# simplified version
-        print('Q = ',Q,end='\n\n')
-        
-        # Append current nu_res and corresponding T_f_Lorentzian values
-        nu_samples_list.extend(nu_res)
-        # T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM/2, nu_peak))
-        T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM, nu_peak))
+            nu_peak_list.append(nu_peak)
+            Q_list.append(Q)
+            FWHM_list.append(FWHM)
+            A_list.append(A)
+            R_ext_list.append(1/(1-A))
 
-        
-        i = i+1
-    
-    # Create pandas DataFrame from the collected data: fitted resonances
+            nu_samples_list.extend(nu_res)
+            T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM, nu_peak))
+        except Exception as e:
+            failed.append((idx, str(e)))
+            print(f"Resonance fitting failed at index {idx}: {e}")
+            continue
+
+    if not nu_peak_list:
+        raise RuntimeError("All resonance fittings failed; no peak results to return.")
+
     peaks_fitted = pd.DataFrame({
         'nu_samples': nu_samples_list,
         'T_f_Lorentzian': T_f_Lorentzian_list
     })
-    # prepare a pd.dataframe to record all the parameters
-    peaks_f_params = pd.DataFrame({'frequency_0_f':nu_peak_array,
-                                'FWHM_f':FWHM_array,
-                                'A_f':A_array,
-                                'Q_f':Q_array,
-                                'R_ext':R_ext_array,
+    peaks_f_params = pd.DataFrame({'frequency_0_f':np.array(nu_peak_list),
+                                'FWHM_f':np.array(FWHM_list),
+                                'A_f':np.array(A_list),
+                                'Q_f':np.array(Q_list),
+                                'R_ext':np.array(R_ext_list),
                                 })
+
+    if failed:
+        print(f"Resonance fitting skipped {len(failed)} peaks: {failed}")
     
     return peaks_f_params,peaks_fitted
 

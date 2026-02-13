@@ -435,7 +435,7 @@ def RemoveOffset_Savgol(wavelength, transmission, idx, window_length=101, polyor
     return transmission_corrected, offset
     # return transmission_filtered
 
-def fit_fsr_polynomial(nu_res,FSR,order=2,nb_sigma=1):
+#def fit_fsr_polynomial(nu_res,FSR,order=2,nb_sigma=1):
     """ Fit a polynomial to the FSR data within several-sigma for a more accurate FSR calculation.
         This allow to filter out multiple modes perturbation.
         Comments by Yijun
@@ -455,7 +455,9 @@ def fit_fsr_polynomial(nu_res,FSR,order=2,nb_sigma=1):
     f_FSR_poly = np.polyfit(nu_res[idx_3sigma], FSR[idx_3sigma],order)
     f_FSR = np.poly1d(f_FSR_poly)
     return f_FSR
-def fit_fsr_polynomial_robust(nu_res, FSR, order=2, nb_sigma=1, max_iter=5):
+
+
+#def fit_fsr_polynomial_robust(nu_res, FSR, order=2, nb_sigma=1, max_iter=5):
     """ 
     Fit a polynomial to the FSR data while filtering out outliers.
     This allows ignoring multiple modes perturbations (bossing).
@@ -495,6 +497,9 @@ def fit_fsr_polynomial_robust(nu_res, FSR, order=2, nb_sigma=1, max_iter=5):
     f_FSR = np.poly1d(f_FSR_poly)
     
     return f_FSR, inliers
+
+from F_fit_fsr_polynomial_robust import fit_fsr_polynomial_robust
+
 
 def calculate_dispersion(wl_fitting, ng_fitting):
     """ 
@@ -579,6 +584,7 @@ def analysis_main(T,
                   Param_peaks_fitting,
                   Param_FSR_fitting,
                   Param_loss_calcul,
+                  Param_phase_matching,
                   Param_legend = {'bbox_to_anchor':(1.2,1),
                                   'loc':'upper left',
                                   'borderaxespad':0.0, 
@@ -811,6 +817,16 @@ def analysis_main(T,
 #     # use a 'robust' polynomial method to fit FSR in Hz with wavelength in nm. This method is resistant to bossing.
 #     # inliers (array-like): Boolean array indicating inliers used in the final fit.
 # =============================================================================
+    from F_FSR_Dispersion import F_FSR_Dispersion
+    F_FSR_Dispersion(
+        nu_peak_array[:-1].to_numpy(),
+        FSR_array,
+        order=3,
+        pump_wavelength_nm=Param_phase_matching['pump wl'],
+        R=Param_RingResonator['diameter']*1e-6/2,
+        isPlot=True,
+    )
+
     f_FSR,inliers = fit_fsr_polynomial_robust(nu2wl(nu_peak_array[:-1]), FSR_array,
                                 order = Param_FSR_fitting['fitting_order'],
                                 nb_sigma = Param_FSR_fitting['nb_sigma'],)
@@ -1029,6 +1045,7 @@ if __name__ == "__main__":
     # 'wl_critical': in nm
     # =============================================================================
     Param_loss_calcul = {'wl_critical':1535,}
+    Param_phase_matching = {'pump wl':1550,}
     
     
     
@@ -1038,13 +1055,12 @@ if __name__ == "__main__":
     # FileName = 'W1100_R100um_G600nm.txt'
     # FileName = '/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_thesis/Analysis_Transmission_GraphicInterface/Transmission mesurements/test_W1100_R100um_G400_BeforeAnnealing.csv'
     FileName = '/test_W1100_R100um_G600_AfterAnnealing.csv'
-    FileName = 'ChirpPer0.46Len600Square_R.txt'
+    # FileName = 'ChirpPer0.46Len600Square_R.txt'
 
 
-    FileName = 'MZI_P0.46_W1.25_Wend_3_L300_BP1_R.txt'
-    # T = load_data(FileName,range_wl=[1500,1574])
-    # FileName = '/Users/yangyijun/Downloads/Measures_Yijun/Ring50GC_A1.csv'
-    # FileName = 'Ring200_W1100_R100um_G600nm_AfterAnnealing.csv'
+    # FileName = 'MZI_P0.46_W1.25_Wend_3_L300_BP1_R.txt'
+    
+
     try:
         T = load_data(FileName,range_wl=Param_RingResonator['range_wl'],wl_name='wavelength',data_name='transmission')
     except ValueError:
@@ -1077,6 +1093,7 @@ if __name__ == "__main__":
                   Param_peaks_fitting,
                   Param_FSR_fitting,
                   Param_loss_calcul,
+                  Param_phase_matching,
                   Param_legend = {'bbox_to_anchor':(1.2,1),
                                   'loc':'upper left',
                                   'borderaxespad':0.0, 

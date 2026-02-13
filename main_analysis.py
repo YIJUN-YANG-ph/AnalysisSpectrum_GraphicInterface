@@ -158,6 +158,9 @@ class MainWindow(QMainWindow):
         self.add_param_group(param_container_layout, "Loss Calculation", "Param_loss_calcul", {
             'wl_critical': 1535
         })
+        self.add_param_group(param_container_layout, "Phase-matching", "Param_phase_matching", {
+            'pump wl': 1550
+        })
         param_container_layout.addStretch(1)
 
         param_scroll = QScrollArea()
@@ -225,6 +228,7 @@ class MainWindow(QMainWindow):
                           self.Param_peaks_fitting,
                           self.Param_FSR_fitting,
                           self.Param_loss_calcul,
+                          self.Param_phase_matching,
                           )
             self.log_message("Analysis completed.")
         elif sender == "Close all":
@@ -299,6 +303,7 @@ class MainWindow(QMainWindow):
         self.Param_FSR_fitting = {'fitting_order':params['Param_FSR_fitting_fitting_order'],
                              'nb_sigma':params['Param_FSR_fitting_nb_sigma'],}
         self.Param_loss_calcul = {'wl_critical':params['Param_loss_calcul_wl_critical']}
+        self.Param_phase_matching = {'pump wl':params['Param_phase_matching_pump wl']}
         # Diamter = self.Param_RingResonator['diameter']
         # self.RoundTrip = np.pi*Diamter*1e-6
     

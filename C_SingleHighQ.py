@@ -365,7 +365,8 @@ class SingleHighQ():
                               center_wl_nm:float = 1550,
                               param_find_DoubletResonance: dict = None,
                               param_rel_Doublet: dict = None,
-                              ax_Doublet: matplotlib.axes._axes.Axes = None
+                              ax_Doublet: matplotlib.axes._axes.Axes = None,
+                              manual_doublet_info: dict = None
                               )-> tuple[np.ndarray, np.ndarray, callable]:
         """
         Fit doublet resonance from the normalised optical transmission T_normalised.
@@ -375,24 +376,33 @@ class SingleHighQ():
               * **param_find_DoubletResonance** (dict, optional): Parameters for doublet peak finding.
               * **param_rel_Doublet** (dict, optional): Relative parameters for doublet fitting.
               * **ax_Doublet** (matplotlib.axes._axes.Axes, optional): Axes object for plotting.
+                            * **manual_doublet_info** (dict, optional): manually provided doublet info with
+                                keys: idx_peaks, properties_peaks, width_peaks. If provided, peak finding is skipped.
         Returns:
             * **opt_Doublet** (np.ndarray): Optimized parameters for the doublet fit.
             * **pcov_Doublet** (np.ndarray): Covariance of the optimized parameters.
             * **f_func_DoubleLorentzian** (callable): Fitted double Lorentzian function.
         """
         # 1st: peak finding
-        if param_find_DoubletResonance is not None:
-            param_find_DoubletResonance = param_find_DoubletResonance
+        if manual_doublet_info is not None:
+            idx_peaks = manual_doublet_info.get('idx_peaks')
+            properties_peaks = manual_doublet_info.get('properties_peaks')
+            width_peaks = manual_doublet_info.get('width_peaks')
+            if idx_peaks is None or properties_peaks is None or width_peaks is None:
+                raise ValueError("manual_doublet_info must provide idx_peaks, properties_peaks, and width_peaks.")
         else:
-            param_find_DoubletResonance = {'distance':10,
-                                    'prominence':0.1,
-                                    'width':5,
-                                    'rel_height':0.5,
-                                    }
-        idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = Q.Q_FindDoubletResonance(
-            T_normalised,
-            ax=ax_Doublet,
-            **param_find_DoubletResonance)
+            if param_find_DoubletResonance is not None:
+                param_find_DoubletResonance = param_find_DoubletResonance
+            else:
+                param_find_DoubletResonance = {'distance':10,
+                                        'prominence':0.1,
+                                        'width':5,
+                                        'rel_height':0.5,
+                                        }
+            idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = self.Q_FindDoubletResonance(
+                T_normalised,
+                ax=ax_Doublet,
+                **param_find_DoubletResonance)
         
 
         # if there is param_rel, update the Rel_A, Rel_FWHM, Rel_Peak
@@ -720,7 +730,7 @@ if __name__ == "__main__":
     FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
     FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/D75'
     FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\EdgeCoupler\D85'
-    FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/EdgeCoupler/D85'
+    # FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/EdgeCoupler/D85'
     # FolderName = r'/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/FineScan Measurement/EdgeCoupler/D85 251208'
     # FolderName = r'C:\Users\yijun.yang\OneDrive\1A_PostDoc\SiN\202511SiN700A_4P_HighQ-PC\FineScan Measurement\D80'
     FileName = r'RRW1.1G0.5L1520.664F10mHzA2V.txt'
@@ -792,6 +802,22 @@ if __name__ == "__main__":
                                                                                 param_find_DoubletResonance=param_find_DoubletResonance,
                                                                                 param_rel_Doublet=param_rel_Doublet,
                                                                                 ax_Doublet=ax_Doublet)
+
+    # Example: manual doublet info (skip peak finding)
+    # manual_doublet_info = {
+    #     'idx_peaks': np.array([10, 15]),
+    #     'properties_peaks': {
+    #         'prominences': np.array([0.1, 0.12]),
+    #         'widths': np.array([5, 6])
+    #     },
+    #     'width_peaks': np.array([1.0e6, 1.2e6])
+    # }
+    # opt_Doublet, pcov_Doublet, f_func_DoubleLorentzian = Q.Q_FitDoubletResonance(
+    #     T_normalised,
+    #     center_wl_nm=config['wavelength_nm'],
+    #     param_rel_Doublet=param_rel_Doublet,
+    #     ax_Doublet=ax_Doublet,
+    #     manual_doublet_info=manual_doublet_info)
     
     '''
     idx_peaks, properties_peaks, right_ips, left_ips, width_peaks = Q.Q_FindDoubletResonance(

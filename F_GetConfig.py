@@ -22,9 +22,27 @@ def F_GetConfig(FileName: str = r'RRW2.8G0.5L1628.594F5mHzA2V.txt') -> dict:
         "amplitude_V": float(match.group(5))
     }
     return config
-
+def F_GetConfig_FuncGenOsci(FileName: str = r'R100W1.1G500_1548nm') -> dict:
+    # get parameters from file name
+    import re
+    pattern = r'^R(\d+)W(\d+(?:\.\d+)?)G(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)nm$'
+    match = re.match(pattern, FileName)
+    if not match:
+        raise ValueError("Filename does not match the expected pattern.")
+    
+    config = {
+        "R": int(match.group(1)),
+        "W": float(match.group(2)),
+        "G": float(match.group(3)),
+        "wavelength_nm": float(match.group(4))
+    }
+    return config
 if __name__ == "__main__":
     FileName = r'RRW2.8G0.5L1628.594F5mHzA2V(2).txt'
     config = F_GetConfig(FileName=FileName)
     # FileName = re.sub(r'\(.*\)\.txt$', '.txt', FileName)
+    print(config)
+
+    FileName = r'R100W1.1G500_1548nm'
+    config = F_GetConfig_FuncGenOsci(FileName=FileName)
     print(config)

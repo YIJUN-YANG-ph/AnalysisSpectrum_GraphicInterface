@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 from F_ConvertUnits import time2nu, wl2nu, nu2wl, dB2linear
+import os
 def F_load_FuncGenOsci(file_name_fg = None, 
                        file_name_res = None,
                        ax = None,
@@ -40,6 +41,9 @@ def F_load_FuncGenOsci(file_name_fg = None,
             file_name_res = r'c2_resonance_TDS5104BCH2_volts.txt'
             file_fg = join(FolderName, file_name_fg)
             file_res = join(FolderName, file_name_res)
+        else:
+             file_fg = file_name_fg
+             file_res = file_name_res
         # file_name = r'D75-G400-W1600.014-1.7-2.2.txt'
         # file_name = r'D75-G400-W1600.014-0-3.txt'
 
@@ -74,6 +78,15 @@ def F_load_FuncGenOsci(file_name_fg = None,
 
 if __name__ == "__main__":
     fig, ax = plt.subplots()
-    T = F_load_FuncGenOsci(ax=ax)
+    # T = F_load_FuncGenOsci(ax=ax)
+    FolderName = '/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_PostDoc/SiN/202511SiN700A_4P_HighQ-PC/measure_FuncGenOsci/SampleDevice'
+    file_fg = 'c1_functiongenerator_TDS5104BCH1_volts.txt'
+    file_res = 'c2_resonance_TDS5104BCH2_volts.txt'
+    file_name_fg = os.path.join(FolderName, file_fg)
+    file_name_res = os.path.join(FolderName, file_res)
+    T = F_load_FuncGenOsci(file_name_fg=file_name_fg, 
+                           file_name_res=file_name_res, 
+                        #    ax=ax
+                           )
     plt.show()
     # print(T.head())

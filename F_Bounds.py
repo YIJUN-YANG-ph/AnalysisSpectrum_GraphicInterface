@@ -27,7 +27,13 @@ def F_Bounds_SingleLorentzian(A_lower: float = 0, A_upper: float = 1,
     if Peak0 is not None:
         Peak_lower = Peak0*(1-Rel_Peak)
         Peak_upper = Peak0*(1+Rel_Peak)
-
+    # compare if upper is really bigger than lower, if not reversed
+    if A_upper < A_lower:
+        A_upper, A_lower = A_lower, A_upper
+    if FWHM_upper < FWHM_lower:
+        FWHM_upper, FWHM_lower = FWHM_lower, FWHM_upper
+    if Peak_upper < Peak_lower:
+        Peak_upper, Peak_lower = Peak_lower, Peak_upper
     lower_bounds = np.array([A_lower, FWHM_lower, Peak_lower])
     upper_bounds = np.array([A_upper, FWHM_upper, Peak_upper])
     bounds = (lower_bounds, upper_bounds)

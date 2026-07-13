@@ -630,7 +630,7 @@ class SingleHighQ():
         A0 = A0/offset[idx_peaks[0]] # normalise the A0
         Rel_A = param_rel['Rel_A']
         # FWHM
-        FWHM0 = properties_peaks['FWHM'][0] # initial guess from peak finding
+        FWHM0 = (properties_peaks['FWHM'][0]) # initial guess from peak finding
         Rel_FWHM = param_rel['Rel_FWHM']     
         # Peak position
         Peak0 = T_normalised['nu_Hz'].iloc[idx_peaks[0]] # initial guess from peak finding

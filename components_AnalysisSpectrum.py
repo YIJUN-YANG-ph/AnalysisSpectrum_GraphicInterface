@@ -20,6 +20,7 @@ from scipy.interpolate import interp1d
 
 from F_ConvertUnits import wl2nu, nu2wl, dB2linear, linear2dB
 from F_LoadData import load_data
+from F_save import F_save
 import scipy.constants as const
 
 C = const.c  # Speed of light in vacuum (m/s)
@@ -585,6 +586,9 @@ def analysis_main(T,
                   Param_FSR_fitting,
                   Param_loss_calcul,
                   Param_phase_matching,
+                  isSave=False,
+                  save_dir=None,
+                  save_status=None,
                   Param_legend = {'bbox_to_anchor':(1.2,1),
                                   'loc':'upper left',
                                   'borderaxespad':0.0, 
@@ -733,6 +737,24 @@ def analysis_main(T,
     # title
     ax_GD.set_title(Title)
     Fig_GD.tight_layout()
+
+    gd_save_status = F_save(
+        (ax_GD,),
+        [
+            (
+                ("frequency_Hz_FSR", "GD_s"),
+                (FSR['frequency_Hz_FSR'].to_numpy(), GD.to_numpy()),
+            )
+        ],
+        isSave=isSave,
+        save_dir=save_dir,
+        figure_prefix="group_delay",
+        data_prefix="group_delay",
+    )
+    if isinstance(save_status, dict):
+        save_status.clear()
+        save_status.update(gd_save_status)
+
     '''
     a new figure to shown fitting for each resonances
     '''

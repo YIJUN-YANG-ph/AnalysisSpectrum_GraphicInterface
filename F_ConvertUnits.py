@@ -41,7 +41,22 @@ def linear2dB(signal_linear):
     """
     signal_dB =10*np.log10(signal_linear)# the signal_dB is transfered to linear signal
     return signal_dB
-
+# def GDD2AccD(GDD_ps2,lambda_nm):
+#     """ convert group delay dispersion (GDD) to accumulated dispersion (AccD)
+#         Created by Yijun
+#         Args:
+#            * **GDD_ps2** (float): GDD in ps^2
+#            * **lambda_nm** (float): wavelength in nm
+#         return:
+#            * **AccD_ps_nm** (float): accumulated dispersion in ps/nm
+#     """
+#     c = consts.c
+#     nu_Hz = wl2nu(lambda_nm)
+#     # lambda_m = lambda_nm * 1e-9
+#     AccD_ps_nm = GDD_ps2 * 1e3 * (-1 * nu_Hz**2 / c) # convert ps^2 to ps/nm
+#     # AccD_s2 = GDD_ps2 * 1e-24 * (c / lambda_m**2)**2
+#     # AccD_ps_nm = AccD_s2 * 1e12 * 1e-9 # convert s^2/m^2 to ps/nm
+#     return AccD_ps_nm
 def time2nu(t_s:np.ndarray,T_data_dB:np.ndarray,
                  Params:dict = {'Vpp_V':4,'Freq_Hz':30*1e-3,'Tunning_Hz_V':300*1e6})->pd.DataFrame:
     """ convert the temporal transmission data to optical frequency domain transmission data. Based on the laser tuning speed and the frequency modulation.
@@ -81,3 +96,9 @@ def Heterodyne(nu_Hz:np.ndarray,
     T['T_dB'] = Pe_dBm # optical power in dB is equal to electrical power in dB, see Explanation in notebook
     T['T_linear'] = dB2linear(T['T_dB'].values)
     return T
+if __name__ == "__main__":
+    # test GDD2AccD
+    GDD_ps2 = -0.6
+    lambda_nm = 1540
+    AccD_ps_nm = GDD2AccD(GDD_ps2,lambda_nm)
+    print(f"GDD: {GDD_ps2} ps^2, lambda: {lambda_nm} nm, AccD: {AccD_ps_nm} ps/nm")

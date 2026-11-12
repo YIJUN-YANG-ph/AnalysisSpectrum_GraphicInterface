@@ -52,7 +52,7 @@ from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, 
                              QPushButton, QFileDialog, QHBoxLayout, QGridLayout,
                              QLineEdit, QLabel, QScrollArea, QGroupBox,
-                             QFormLayout, QTextEdit)
+                             QFormLayout, QTextEdit, QCheckBox)
 from PyQt5.QtGui import QFont
 
 import pyqtgraph as pg
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         self.T={}
+        self.loaded_file_path = None
         
         self.setWindowTitle('CSV Plotter with PyQtGraph')
         self.setGeometry(100, 100, 1200, 800)
@@ -123,6 +124,11 @@ class MainWindow(QMainWindow):
         param_file_buttons.addWidget(self.button_save_params)
         param_file_buttons.addWidget(self.button_load_params)
         controls_layout.addLayout(param_file_buttons)
+
+        # Optional save switch for analysis outputs
+        self.checkbox_is_save = QCheckBox('Save Results')
+        self.checkbox_is_save.setChecked(False)
+        controls_layout.addWidget(self.checkbox_is_save)
 
         # Parameter groups inside a scroll area
         self.param_fields = {}
@@ -221,6 +227,9 @@ class MainWindow(QMainWindow):
             find resonaces
             '''
             self.retrieve_params()
+            is_save = self.checkbox_is_save.isChecked()
+            save_dir = self.get_default_results_dir()
+            save_status = {}
             self.Fig_FSR,self.Fig_peak_fitting,self.Fig_resonance,self.fig_loss = analysis_main(self.T,
                           self.Param_RingResonator,
                           self.Param_find_peaks,
@@ -229,8 +238,22 @@ class MainWindow(QMainWindow):
                           self.Param_FSR_fitting,
                           self.Param_loss_calcul,
                           self.Param_phase_matching,
+                          isSave=is_save,
+                          save_dir=save_dir,
+                          save_status=save_status,
                           )
             self.log_message("Analysis completed.")
+            if is_save:
+                if save_status.get('saved'):
+                    self.log_message(f"Saved results to: {save_status.get('save_dir')}")
+                    for file_path in save_status.get('figure_files', []):
+                        self.log_message(f"Saved figure: {file_path}")
+                    for file_path in save_status.get('data_files', []):
+                        self.log_message(f"Saved data: {file_path}")
+                else:
+                    self.log_message(f"Save skipped: {save_status.get('message', 'unknown reason')}")
+            else:
+                self.log_message("Save disabled (isSave=False).")
         elif sender == "Close all":
             # if hasattr(self, 'Fig_FSR') is not None:
             plt.close('all')
@@ -322,6 +345,15 @@ class MainWindow(QMainWindow):
         # Set offset if you want to change legend position
         self.legend.setOffset((10, 165))  # Adjusts position of the legend box on the plot
 
+    def get_default_results_dir(self):
+        """Default save directory: next to imported CSV as results_<file_stem>."""
+        if not self.loaded_file_path:
+            return None
+        file_path = os.path.abspath(self.loaded_file_path)
+        file_dir = os.path.dirname(file_path)
+        file_stem = os.path.splitext(os.path.basename(file_path))[0]
+        return os.path.join(file_dir, f"results_{file_stem}")
+
     def load_csv(self,file_name = None):
         # If no file is specified, open a dialog to select a CSV
         if file_name is None:
@@ -330,6 +362,10 @@ class MainWindow(QMainWindow):
             file_names, _ = QFileDialog.getOpenFileNames(self, "Open CSV File", "", "All Files (*);;CSV Files (*.csv)", options=options)
         else:
             file_names = [file_name]
+        if not file_names:
+            self.log_message("No file selected.")
+            return
+        self.loaded_file_path = file_names[0]
         T_s = []
         # if file_name:
         for file_name in file_names:

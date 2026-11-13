@@ -108,8 +108,7 @@ def F_intDisp_HOD(mu, Dint, f_FSR, freq, R=100e-6, plot_handles=None):
         props = dict(boxstyle='round', facecolor='white', alpha=0.5)
         ax_disp.text(0.05, 0.95, textstr, transform=ax_disp.transAxes, fontsize=10,
                      verticalalignment='top', bbox=props)
-        #tight layout
-        plt.tight_layout()
+        ax_disp.figure.tight_layout()
         plt.show()
 
     return D1, D2, D3, beta2, beta3
@@ -183,6 +182,7 @@ def F_FSR_intDisp(
         ax_fsr.scatter(freq, FSR_fit, label='FSR Fit sampled', color='green', alpha=0.3)
         ax_fsr.legend() 
         ax_fsr.grid() 
+        fig_fsr.tight_layout()
 
     # step 3: D1 = FSR_fit * 2pi
     D1 = FSR_fit * 2 * np.pi
@@ -250,6 +250,7 @@ def F_FSR_intDisp(
 
         ax_wl = ax_disp.secondary_xaxis('top', functions=(mu_to_wl, wl_to_mu))
         ax_wl.set_xlabel('Wavelength (nm)')
+        fig_disp.tight_layout()
 
         plot_handles = {
             "fig_fsr": fig_fsr,

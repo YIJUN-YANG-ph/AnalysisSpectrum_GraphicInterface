@@ -599,7 +599,7 @@ def analysis_main(T: pd.DataFrame,
     ax_dispersion_beta_2.set_ylabel(r'$\beta_2$ ($ps^2/km$)')
     ax_dispersion_beta_2.legend()
     # ax_dispersion.legend()
-    Fig_FSR.tight_layout()
+    # Fig_FSR.tight_layout()
     
     '''
     a new figure to show the group delay from FSR
@@ -737,6 +737,7 @@ def analysis_main(T: pd.DataFrame,
 
     
     ax_pf2.plot(T['wavelength_nm'].iloc[peaks_f_params['idx_peak']],peaks_f_params['Q_f'],'s',label='Q factor')
+    ax_pf2.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
     ax_pf2.set_ylabel('Q factor')
     ax_pf2.set_xlabel('wavelength (nm)')
     # ax_pf2.legend(**Param_legend)
@@ -819,9 +820,8 @@ def analysis_main(T: pd.DataFrame,
                               color='red',label=r'$\beta_2$ from fitting')
     ax_dispersion.legend(**Param_legend)
     ax_dispersion_beta_2.legend(**Param_legend_twinx)
-    # ax_dispersion.legend()
-    # ax_dispersion_beta_2.legend()
-    Fig_FSR.tight_layout()
+
+    # Fig_FSR.tight_layout()
 
     
     
@@ -889,10 +889,14 @@ def analysis_main(T: pd.DataFrame,
     
     # Move the figure to the bottom-right corner
     manager.window.setGeometry(int(x_position)+50, int(y_position)-50, int(fig_width), int(fig_height)+50)
-    Fig_FSR.tight_layout()
+    # Fig_FSR.tight_layout()
     # Fig_FSR.close()
     plt.show()
     
+    Fig_peak_fitting.tight_layout()
+    Fig_resonance.tight_layout()
+    # Fig_FSR.tight_layout() First Figure
+    fig_loss.tight_layout()
     
     return Fig_FSR,Fig_peak_fitting,Fig_resonance,fig_loss
 

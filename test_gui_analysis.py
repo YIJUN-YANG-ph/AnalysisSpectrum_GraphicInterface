@@ -304,6 +304,34 @@ class AnalysisErrorDisplayTests(unittest.TestCase):
         self.assertIn('RuntimeError: display failed', stderr.getvalue())
         self.assertIn('Could not display figure', self.window.results_output.toPlainText())
 
+    def test_failed_analysis_lays_out_only_new_figures_before_showing(self):
+        old_figure = plt.figure()
+        figures = []
+        events = []
+
+        def fail_analysis(*args, **kwargs):
+            figures.extend([plt.figure(), plt.figure()])
+            raise RuntimeError('analysis failed')
+
+        def layout(figure):
+            events.append(('layout', figure))
+            if figure is figures[0]:
+                raise ValueError('layout failed')
+
+        def show(figure):
+            events.append(('show', figure))
+
+        with patch.object(gui, 'analysis_main', side_effect=fail_analysis):
+            with patch.object(matplotlib.figure.Figure, 'tight_layout', new=layout):
+                with patch.object(matplotlib.figure.Figure, 'show', new=show):
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        self.window.plot_buttons['Show Figure 1'].click()
+
+        self.assertNotIn(('layout', old_figure), events)
+        for figure in figures:
+            self.assertLess(events.index(('layout', figure)), events.index(('show', figure)))
+        self.assertIn('Could not adjust layout for figure', self.window.results_output.toPlainText())
+
     def test_invalid_parameters_report_traceback_without_running_analysis(self):
         self.window.param_fields['Param_Read_csv_skiprows'].setText('-1')
         stderr = io.StringIO()

@@ -13,6 +13,7 @@ This script define necessary component functions for spectrum with resonances.
 import pandas as pd
 import numpy as np
 import sys
+import warnings
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
@@ -323,6 +324,7 @@ def resonances_fitting(wavelength_nm,transmission_linear,
     FWHM_list = []
     A_list = []
     R_ext_list = []
+    idx_peak_list = []
     nu_samples_list = []
     T_f_Lorentzian_list = []
     failed = []
@@ -362,15 +364,18 @@ def resonances_fitting(wavelength_nm,transmission_linear,
             FWHM = popt[1]
             A = popt[0]
             Q = nu_peak/FWHM
+            fitted_values = f_func_Lorentzian(nu_res, A, FWHM, nu_peak)
+            R_ext = 1/(1-A)
 
             nu_peak_list.append(nu_peak)
             Q_list.append(Q)
             FWHM_list.append(FWHM)
             A_list.append(A)
-            R_ext_list.append(1/(1-A))
+            R_ext_list.append(R_ext)
+            idx_peak_list.append(idx)
 
             nu_samples_list.extend(nu_res)
-            T_f_Lorentzian_list.extend(f_func_Lorentzian(nu_res, A, FWHM, nu_peak))
+            T_f_Lorentzian_list.extend(fitted_values)
         except Exception as e:
             failed.append((idx, str(e)))
             print(f"Resonance fitting failed at index {idx}: {e}")
@@ -383,7 +388,8 @@ def resonances_fitting(wavelength_nm,transmission_linear,
         'nu_samples': nu_samples_list,
         'T_f_Lorentzian': T_f_Lorentzian_list
     })
-    peaks_f_params = pd.DataFrame({'frequency_0_f':np.array(nu_peak_list),
+    peaks_f_params = pd.DataFrame({'idx_peak':np.array(idx_peak_list),
+                                'frequency_0_f':np.array(nu_peak_list),
                                 'FWHM_f':np.array(FWHM_list),
                                 'A_f':np.array(A_list),
                                 'Q_f':np.array(Q_list),
@@ -814,7 +820,7 @@ def analysis_main(T,
     ax_pf1.legend()
 
     
-    ax_pf2.plot(T['wavelength_nm'][peaks['idx_peaks']],peaks_f_params['Q_f'],'s',label='Q factor')
+    ax_pf2.plot(T['wavelength_nm'].iloc[peaks_f_params['idx_peak']],peaks_f_params['Q_f'],'s',label='Q factor')
     ax_pf2.set_ylabel('Q factor')
     ax_pf2.set_xlabel('wavelength (nm)')
     # ax_pf2.legend(**Param_legend)
@@ -822,7 +828,17 @@ def analysis_main(T,
 
     
     Fig_peak_fitting.tight_layout()
-    
+
+    fitted_positions = np.flatnonzero(
+        peaks['idx_peaks'].isin(peaks_f_params['idx_peak']).to_numpy()
+    )
+    if np.any(np.diff(fitted_positions) > 1):
+        warnings.warn(
+            "Some failed resonance fits lie between successful fits. "
+            "Downstream FSR, dispersion, finesse, and loss results may be incorrect "
+            "because frequency differences can span missing peaks.",
+            RuntimeWarning,
+        )
     
     '''
     Calculate loss from Lorentzian fitting of each peaks.

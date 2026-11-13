@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
                               save_dir=save_dir,
                               save_status=save_status,
                               )
-            except Exception:
+            except Exception: # if error occurs during analysis, the error will be logged and existing figures will still be displayed
                 error = traceback.format_exc()
                 print(error, file=sys.stderr, end='')
                 self.log_message("Analysis failed:\n" + error)

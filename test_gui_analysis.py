@@ -356,6 +356,43 @@ class AnalysisErrorDisplayTests(unittest.TestCase):
         )
         self.assertIn('Analysis completed.', self.window.results_output.toPlainText())
 
+    def test_analysis_fsr_legends_clear_right_axes_and_figure_edges(self):
+        self.window.load_csv(file_name='test_W1100_R100um_G400_AfterAnnealing.csv')
+        self.window.calculate_difference_yijun()
+        with patch.object(plt, 'show'):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.window.plot_buttons['Show Figure 1'].click()
+
+        self.assertIn('Analysis completed.', self.window.results_output.toPlainText())
+        figure = self.window.Fig_FSR
+        axes_by_label = {ax.get_ylabel(): ax for ax in figure.axes if ax.get_ylabel()}
+        legends = [ax.get_legend() for ax in figure.axes if not ax.axison]
+        self.assertEqual(len(legends), 2)
+        expected_labels = [
+            ['FSR', 'FSR fitting based on peak fitting', 'FSR not considered',
+             'FSR considered', '$n_g$', '$n_g$ fitting based on peak fitting'],
+            ['GVD_D', 'GVD D from fitting', r'$\beta_2$', r'$\beta_2$ from fitting'],
+        ]
+        for legend, expected in zip(legends, expected_labels):
+            self.assertEqual([text.get_text() for text in legend.get_texts()], expected)
+
+        for size in ((12, 8.5), (10, 8)):
+            with self.subTest(size=size):
+                figure.set_size_inches(*size)
+                figure.canvas.draw()
+                renderer = figure.canvas.get_renderer()
+                legend_boxes = [legend.get_window_extent(renderer) for legend in legends]
+                for right_label, legend_box in zip(
+                    ('$n_g$', r'$\beta_2$ ($ps^2/km$)'), legend_boxes
+                ):
+                    axis_box = axes_by_label[right_label].yaxis.get_tightbbox(renderer)
+                    self.assertGreaterEqual(legend_box.x0 - axis_box.x1, 5)
+                    self.assertGreaterEqual(legend_box.x0, figure.bbox.x0)
+                    self.assertLessEqual(legend_box.x1, figure.bbox.x1)
+                    self.assertGreaterEqual(legend_box.y0, figure.bbox.y0)
+                    self.assertLessEqual(legend_box.y1, figure.bbox.y1)
+                self.assertFalse(legend_boxes[0].overlaps(legend_boxes[1]))
+
 
 if __name__ == '__main__':
     unittest.main()

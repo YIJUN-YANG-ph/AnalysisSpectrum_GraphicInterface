@@ -538,6 +538,10 @@ def analysis_main(T: pd.DataFrame,
            * **Param_peaks_fitting** (dict): parameters for peak fitting.
            * **Param_FSR_fitting** (dict): parameters for FSR fitting.
            * **Param_loss_calcul** (dict): parameters for loss calculation.
+           * **Param_legend** (dict): legend options for the group-delay plot.
+             FSR and dispersion legends use dedicated axes instead.
+           * **Param_legend_twinx** (dict): retained for call compatibility;
+             FSR and dispersion legends no longer use separate twin-axis placement.
            * **Param_phase_matching** (dict): parameters for phase matching.
            * **kwargs** (): other keyword arguments.
            
@@ -548,10 +552,16 @@ def analysis_main(T: pd.DataFrame,
 
     Diamter = Param_RingResonator['diameter']
     RoundTrip = np.pi*Diamter*1e-6
-    Fig_FSR,(ax_T,ax_FSR,ax_dispersion) = plt.subplots(nrows =3,ncols=1,sharex=True,sharey = False,figsize = [10,8.5])
+    Fig_FSR = plt.figure(figsize=[12, 8.5])
+    grid = Fig_FSR.add_gridspec(3, 2, width_ratios=[3, 1])
+    ax_T = Fig_FSR.add_subplot(grid[0, 0])
+    ax_FSR = Fig_FSR.add_subplot(grid[1, 0], sharex=ax_T)
+    ax_dispersion = Fig_FSR.add_subplot(grid[2, 0], sharex=ax_T)
+    ax_T.tick_params(labelbottom=False)
+    ax_FSR.tick_params(labelbottom=False)
     manager = plt.get_current_fig_manager()
     try:
-        manager.window.setGeometry(350, 50, 800, 800)  # x, y, width, height
+        manager.window.setGeometry(350, 50, 1000, 800)  # x, y, width, height
     except AttributeError:
         print("Setting the window position is not supported in this backend.")
     
@@ -799,15 +809,11 @@ def analysis_main(T: pd.DataFrame,
                 'v',
                 color = 'blue',alpha=0.5,
                 label = 'FSR considered')
-    ax_FSR.legend(**Param_legend)
-    # ax_FSR.legend()
 # =============================================================================
 #     # calculate group index from FSR fitting based on Lorentzian fitting on each peaks.
 # =============================================================================
     ng_array = calcul_ng(f_FSR(nu2wl(nu_peak_array)),RoundTrip,cavity_type='ring')
     ax_FSR_ng.plot(nu2wl(nu_peak_array),ng_array,'-',color='red',label='$n_g$ fitting based on peak fitting')
-    ax_FSR_ng.legend(**Param_legend_twinx)
-    # ax_FSR_ng.legend()
 
 # =============================================================================
 #     # Recalculate GVD parameters base on FSR fitting, which is based on Larentzian fitting on each peaks. 
@@ -818,10 +824,21 @@ def analysis_main(T: pd.DataFrame,
                        color='blue',label='GVD D from fitting')
     ax_dispersion_beta_2.plot(GVD_array['wavelength_nm_GVD'],GVD_array['GVD_beta_2'],
                               color='red',label=r'$\beta_2$ from fitting')
-    ax_dispersion.legend(**Param_legend)
-    ax_dispersion_beta_2.legend(**Param_legend_twinx)
-
-    # Fig_FSR.tight_layout()
+    for row, left, right in (
+        (1, ax_FSR, ax_FSR_ng),
+        (2, ax_dispersion, ax_dispersion_beta_2),
+    ):
+        for axis in (left, right):
+            legend = axis.get_legend()
+            if legend is not None:
+                legend.remove()
+        legend_ax = Fig_FSR.add_subplot(grid[row, 1])
+        legend_ax.axis('off')
+        left_handles, left_labels = left.get_legend_handles_labels()
+        right_handles, right_labels = right.get_legend_handles_labels()
+        legend_ax.legend(left_handles + right_handles, left_labels + right_labels,
+                         loc='upper left', borderaxespad=0.0, shadow=True)
+    Fig_FSR.set_layout_engine('tight', w_pad=2.5)
 
     
     
@@ -889,7 +906,6 @@ def analysis_main(T: pd.DataFrame,
     
     # Move the figure to the bottom-right corner
     manager.window.setGeometry(int(x_position)+50, int(y_position)-50, int(fig_width), int(fig_height)+50)
-    # Fig_FSR.tight_layout()
     # Fig_FSR.close()
     plt.show()
     

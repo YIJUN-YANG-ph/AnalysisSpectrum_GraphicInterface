@@ -9,9 +9,12 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import matplotlib
 matplotlib.use('Qt5Agg')
 from matplotlib import pyplot as plt
+import numpy as np
+import pandas as pd
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
 
+import components_AnalysisSpectrum as analysis
 import GUI_main_analysis as gui
 
 
@@ -28,6 +31,63 @@ class AnalysisErrorDisplayTests(unittest.TestCase):
     def tearDown(self):
         plt.close('all')
         self.window.close()
+
+    def test_plot_axis_labels_remain_after_clearing(self):
+        for widget, ylabel in (
+            (self.window.plot_widget, 'data (dB)'),
+            (self.window.plot_widget_operation, 'data (a.u.)'),
+        ):
+            with self.subTest(ylabel=ylabel):
+                widget.clear()
+                self.assertEqual(widget.getAxis('bottom').labelText, 'wavelength (nm)')
+                self.assertEqual(widget.getAxis('left').labelText, ylabel)
+
+    def test_analyze_overlays_peak_geometry_and_replaces_it_on_reanalysis(self):
+        wavelength = np.linspace(1500, 1600, 401)
+        transmission = 1 - 0.2 * np.exp(-((wavelength - 1550) / 2) ** 2)
+        data = pd.DataFrame({
+            'wavelength_nm': wavelength,
+            'T_linear': transmission,
+            'nu_Hz': analysis.wl2nu(wavelength),
+        })
+        self.window.T = data
+        curve = self.window.plot_widget_operation.plot(wavelength, transmission)
+
+        with patch.object(analysis, 'calcul_FSR', side_effect=RuntimeError('stop after peaks')):
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                self.window.plot_buttons['Show Figure 1'].click()
+                old_items = list(self.window.peak_overlay_items)
+                self.window.plot_buttons['Show Figure 1'].click()
+
+        self.assertEqual(len(self.window.peak_overlay_items), 3)
+        self.assertTrue(all(item not in self.window.plot_widget_operation.listDataItems()
+                            for item in old_items))
+        self.assertIn(curve, self.window.plot_widget_operation.listDataItems())
+        resonance, prominence, fwhm = self.window.peak_overlay_items
+        np.testing.assert_array_equal(resonance.getData()[0], [1550])
+        np.testing.assert_array_equal(resonance.getData()[1], [transmission[200]])
+
+        figure = plt.figure(max(plt.get_fignums()))
+        vertical, horizontal = figure.axes[0].collections[:2]
+        for item, segments in ((prominence, vertical.get_segments()),
+                               (fwhm, horizontal.get_segments())):
+            x, y = item.getData()
+            np.testing.assert_allclose(np.column_stack((x, y)), np.asarray(segments).reshape(-1, 2))
+        self.assertIn('RuntimeError: stop after peaks', self.window.results_output.toPlainText())
+
+        self.window.plot_buttons['Show Figure 3'].click()
+        self.assertEqual(self.window.peak_overlay_items, [])
+        self.assertEqual(self.window.plot_widget_operation.listDataItems(), [])
+
+    def test_empty_peak_results_remove_previous_overlay(self):
+        data = pd.DataFrame({'wavelength_nm': [1500, 1501], 'T_linear': [1, 1]})
+        self.window.show_peak_overlay(
+            data, pd.DataFrame({'idx_peaks': [0]}),
+            {'prominences': np.array([0.1]), 'FWHM_left_ips': np.array([0.0]),
+             'FWHM_right_ips': np.array([1.0]), 'FWHM_width_heights': np.array([1.05])})
+        self.window.show_peak_overlay(data, pd.DataFrame({'idx_peaks': []}), {})
+        self.assertEqual(self.window.peak_overlay_items, [])
+        self.assertEqual(self.window.plot_widget_operation.listDataItems(), [])
 
     def test_analysis_error_shows_only_new_figures_and_full_traceback(self):
         old_figure = plt.figure()

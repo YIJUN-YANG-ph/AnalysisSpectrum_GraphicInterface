@@ -137,6 +137,8 @@ def find_peaks_for_FSR(T, ax=None, **param_find_peaks)->tuple:
         Returns:
            * **peaks** : pandas dataframe. idx_peaks: the index the peaks in input frequency_Hz.
            * **properties_peaks** : dict. properties of the peaks found by scipy.signal.find_peaks.
+             FWHM_width_heights, FWHM_left_ips and FWHM_right_ips describe the
+             half-prominence line in transmission and sample-index coordinates.
     """
     from scipy.signal import find_peaks
     if param_find_peaks:
@@ -172,6 +174,9 @@ def find_peaks_for_FSR(T, ax=None, **param_find_peaks)->tuple:
     # FWHM_peaks = properties_peaks_half['widths'] * (T['nu_Hz'].iloc[10]-T['nu_Hz'].iloc[9])
     FWHM_peaks = results_half[0] * (T['nu_Hz'].iloc[10]-T['nu_Hz'].iloc[9])
     properties_peaks['FWHM'] = FWHM_peaks
+    properties_peaks['FWHM_width_heights'] = -results_half[1]
+    properties_peaks['FWHM_left_ips'] = results_half[2]
+    properties_peaks['FWHM_right_ips'] = results_half[3]
 
     if ax:
         ax.plot(T['wavelength_nm'][idx_peaks],
@@ -607,11 +612,14 @@ def analysis_main(T,
                                         'shadow':True},
                   Title = 'Not defined',
                   Addition_dict:dict = {},
+                  peak_result_callback=None,
                   **kwargs):
     """ Do analysis.
         Comments by Yijun
         Args:
            * **T** (pd.dataframe): 
+           * **peak_result_callback** (callable, optional): receives T, peaks and
+             properties immediately after peak detection, before subsequent analysis.
            * **?** (): 
            * **?** (): 
            * **kwargs** ():other 
@@ -650,6 +658,8 @@ def analysis_main(T,
     find peaks
     '''
     peaks, properties_peaks = find_peaks_for_FSR(T,ax = ax_T, **Param_find_peaks)
+    if peak_result_callback is not None:
+        peak_result_callback(T, peaks, properties_peaks)
     ax_T.plot(nu2wl(T['nu_Hz'][peaks['idx_peaks']]),T['T_linear'][peaks['idx_peaks']],"x",label = 'resonance')
     ax_T.legend()
     # ax_T.legend(**Param_legend)

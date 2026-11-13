@@ -201,6 +201,8 @@ class MainWindow(QMainWindow):
         # Main spectrum plot (top)
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground('w')
+        self.plot_widget.setLabel('bottom', 'wavelength (nm)')
+        self.plot_widget.setLabel('left', 'data (dB)')
         self.legend = self.plot_widget.addLegend(labelTextSize='10pt')
         self.set_legend_style()
         plots_layout.addWidget(self.plot_widget)
@@ -208,6 +210,10 @@ class MainWindow(QMainWindow):
         # Operation plot (bottom)
         self.plot_widget_operation = pg.PlotWidget()
         self.plot_widget_operation.setBackground('w')
+        self.plot_widget_operation.setLabel('bottom', 'wavelength (nm)')
+        self.plot_widget_operation.setLabel('left', 'data (a.u.)')
+        self.plot_widget_operation.addLegend(labelTextColor='k', labelTextSize='10pt')
+        self.peak_overlay_items = []
         plots_layout.addWidget(self.plot_widget_operation)
 
         main_layout.addWidget(plots_panel, 1)
@@ -235,6 +241,7 @@ class MainWindow(QMainWindow):
             existing_figures = set(plt.get_fignums())
             try:
                 self.retrieve_params()
+                self.clear_peak_overlay()
                 is_save = self.checkbox_is_save.isChecked()
                 save_dir = self.get_default_results_dir()
                 save_status = {}
@@ -249,6 +256,7 @@ class MainWindow(QMainWindow):
                               isSave=is_save,
                               save_dir=save_dir,
                               save_status=save_status,
+                              peak_result_callback=self.show_peak_overlay,
                               )
             except Exception: # if error occurs during analysis, the error will be logged and existing figures will still be displayed
                 error = traceback.format_exc()
@@ -285,6 +293,7 @@ class MainWindow(QMainWindow):
             self.T = {}
             self.measurement_data = {}
             # Clear any existing plot 
+            self.clear_peak_overlay()
             self.plot_widget_operation.clear()
             self.plot_widget.clear()
             # self.calculate_difference_yijun()
@@ -297,6 +306,41 @@ class MainWindow(QMainWindow):
         """Append a message to the results panel."""
         self.results_output.append(message)
         self.results_output.verticalScrollBar().setValue(self.results_output.verticalScrollBar().maximum())
+
+    def clear_peak_overlay(self):
+        for item in self.peak_overlay_items:
+            self.plot_widget_operation.removeItem(item)
+        self.peak_overlay_items.clear()
+
+    def show_peak_overlay(self, data, peaks, properties):
+        self.clear_peak_overlay()
+        indices = peaks['idx_peaks'].to_numpy()
+        if len(indices) == 0:
+            return
+
+        wavelengths = data['wavelength_nm'].to_numpy()
+        transmission = data['T_linear'].to_numpy()
+        peak_wavelengths = wavelengths[indices]
+        peak_values = transmission[indices]
+        left = properties['FWHM_left_ips'].astype(int)
+        right = properties['FWHM_right_ips'].astype(int)
+        heights = properties['FWHM_width_heights']
+
+        resonance = pg.PlotDataItem(
+            peak_wavelengths, peak_values, pen=None, symbol='x',
+            symbolPen=pg.mkPen('b', width=2), symbolSize=9, name='resonance')
+        prominence = pg.PlotDataItem(
+            np.repeat(peak_wavelengths, 2),
+            np.column_stack((peak_values + properties['prominences'], peak_values)).ravel(),
+            connect='pairs', pen=pg.mkPen((255, 127, 14), width=2, style=QtCore.Qt.DashDotLine),
+            name='prominence')
+        fwhm = pg.PlotDataItem(
+            np.column_stack((wavelengths[left], wavelengths[right])).ravel(),
+            np.repeat(heights, 2), connect='pairs',
+            pen=pg.mkPen((214, 39, 40), width=2, style=QtCore.Qt.DotLine), name='FWHM')
+        self.peak_overlay_items = [resonance, prominence, fwhm]
+        for item in self.peak_overlay_items:
+            self.plot_widget_operation.addItem(item)
     
     def add_param_group(self, parent_layout, title, param_name, default_values):
         """Create a titled parameter group with labelled inputs."""
@@ -570,6 +614,7 @@ class MainWindow(QMainWindow):
 
                 result_offsetRM_s.append(result)# append the linear result 
             # Clear any existing plot and plot the result within the selected range
+            self.clear_peak_overlay()
             self.plot_widget_operation.clear()
             #pg.PlotWidget() can not handle pd.dataframe, so it has to be convert to np.array
             for i, result in enumerate(result_offsetRM_s):
@@ -589,11 +634,13 @@ class MainWindow(QMainWindow):
                 # Create a new DataFrame with the filtered data and reset index
                 self.T = self.measurement_data[mask].copy().reset_index(drop=True)
                 # Clear any existing plot and plot the result within the selected range
+                self.clear_peak_overlay()
                 self.plot_widget_operation.clear()
                 #pg.PlotWidget() can not handle pd.dataframe, so it has to be convert to np.array
                 self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), self.T['T_linear'].to_numpy(), pen=pg.mkPen(color=(160, 32, 240), width=2))
             else:
                 self.T = self.measurement_data.copy().reset_index(drop=True)
+                self.clear_peak_overlay()
                 self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), self.T['T_linear'].to_numpy(), pen=pg.mkPen(color=(160, 32, 240), width=2))
 
         except (ValueError, SyntaxError):

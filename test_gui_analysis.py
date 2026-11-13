@@ -12,7 +12,9 @@ matplotlib.use('Qt5Agg')
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QEvent, QPoint, QPointF, QTimer, Qt
+from PyQt5.QtGui import QMouseEvent
+from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication
 
 import components_AnalysisSpectrum as analysis
@@ -129,6 +131,130 @@ class AnalysisErrorDisplayTests(unittest.TestCase):
         self.window.show_peak_overlay(data, pd.DataFrame({'idx_peaks': []}), {})
         self.assertEqual(self.window.peak_overlay_items, [])
         self.assertEqual(self.window.plot_widget_operation.listDataItems(), [])
+
+    def test_peak_cursor_changes_are_used_on_reanalysis_and_can_be_reset(self):
+        wavelength = np.linspace(1500, 1600, 401)
+        transmission = (1 - 0.2 * np.exp(-((wavelength - 1525) / 2) ** 2)
+                        - 0.2 * np.exp(-((wavelength - 1575) / 2) ** 2))
+        self.window.T = pd.DataFrame({
+            'wavelength_nm': wavelength, 'T_linear': transmission,
+            'nu_Hz': analysis.wl2nu(wavelength),
+        })
+        self.window.param_fields['Param_find_peaks_distance'].setText('50')
+        fit_bounds = []
+
+        def fake_fit(nu_res, transmission_res, bounds):
+            fit_bounds.append(bounds)
+            return (np.array([0.1, 1e9, np.mean(nu_res)]), None,
+                    lambda nu, amplitude, width, center: np.ones_like(nu))
+
+        def run_analysis(data, ring, finding, smoothing, fitting, *args, **kwargs):
+            peaks, properties = analysis.find_peaks_for_FSR(data, **finding)
+            kwargs['peak_result_callback'](data, peaks, properties)
+            analysis.resonances_fitting(
+                data['wavelength_nm'], data['T_linear'], peaks['idx_peaks'], properties,
+                fwhm_bounds_overrides=kwargs['fwhm_bounds_overrides'], **fitting)
+            return tuple(object() for _ in range(4))
+
+        with patch.object(gui, 'analysis_main', side_effect=run_analysis):
+            with patch('F_LorentzianModel.f_locatized', side_effect=fake_fit):
+                self.window.plot_buttons['Show Figure 1'].click()
+                resonance = self.window.peak_overlay_items[0]
+                resonance.sigPointsClicked.emit(resonance, [resonance.scatter.points()[0]], None)
+                self.assertEqual(self.window.selected_peak_index, 100)
+                self.assertEqual(len(self.window.peak_cursor_items), 4)
+                lower, lower_mirror, upper, upper_mirror = self.window.peak_cursor_items
+                center = self.window.T['nu_Hz'].iloc[100]
+                lower.setValue(analysis.fwhm_width_to_wavelength_edges(center, 2e10)[1])
+                upper.setValue(analysis.fwhm_width_to_wavelength_edges(center, 6e10)[1])
+                np.testing.assert_allclose(self.window.manual_fwhm_bounds[100], [2e10, 6e10], rtol=1e-9)
+                np.testing.assert_allclose(lower_mirror.value(),
+                                           analysis.fwhm_width_to_wavelength_edges(center, 2e10)[0])
+                np.testing.assert_allclose(upper_mirror.value(),
+                                           analysis.fwhm_width_to_wavelength_edges(center, 6e10)[0])
+                self.assertIn('nm', lower.label.format)
+                self.window.param_fields['Param_peaks_fitting_Rel_FWHM'].setText('0.25')
+                self.window.plot_buttons['Show Figure 1'].click()
+
+        lower_bounds, upper_bounds = fit_bounds[-2]
+        np.testing.assert_allclose([lower_bounds[1], upper_bounds[1]], [2e10, 6e10], rtol=1e-9)
+        second_lower, second_upper = fit_bounds[-1]
+        peak_width = abs(self.window.peak_result_properties['FWHM'][1])
+        np.testing.assert_allclose([second_lower[1], second_upper[1]], [0.75 * peak_width, 1.25 * peak_width])
+        self.assertIn(100, self.window.manual_fwhm_bounds)
+        self.window.button_reset_peak_bounds.click()
+        self.assertNotIn(100, self.window.manual_fwhm_bounds)
+        self.assertEqual(len(self.window.peak_cursor_items), 4)
+
+    def test_changed_data_or_peak_settings_discard_manual_bounds(self):
+        wavelength = np.linspace(1500, 1600, 401)
+        self.window.T = pd.DataFrame({
+            'wavelength_nm': wavelength, 'T_linear': np.ones(401),
+            'nu_Hz': analysis.wl2nu(wavelength),
+        })
+        self.window.retrieve_params()
+        self.window.sync_peak_context()
+        self.window.manual_fwhm_bounds[100] = (1e9, 2e9)
+        self.window.T.loc[10, 'T_linear'] = 0.8
+        self.window.sync_peak_context()
+        self.assertEqual(self.window.manual_fwhm_bounds, {})
+        self.window.manual_fwhm_bounds[100] = (1e9, 2e9)
+        self.window.param_fields['Param_find_peaks_distance'].setText('100')
+        self.window.retrieve_params()
+        self.window.sync_peak_context()
+        self.assertEqual(self.window.manual_fwhm_bounds, {})
+        self.assertIn('Manual FWHM bounds cleared', self.window.results_output.toPlainText())
+
+    def test_importing_new_data_discards_manual_bounds(self):
+        data = pd.DataFrame({'wavelength_nm': [1500.0, 1501.0], 'T_linear': [1.0, 0.9],
+                             'T_dB': [0.0, -0.5], 'nu_Hz': analysis.wl2nu(np.array([1500.0, 1501.0]))})
+        self.window.manual_fwhm_bounds[0] = (1e9, 2e9)
+        with patch.object(gui, 'load_data', return_value=data):
+            self.window.load_csv(file_name='new.csv')
+        self.assertEqual(self.window.manual_fwhm_bounds, {})
+        self.assertIn('Manual FWHM bounds cleared', self.window.results_output.toPlainText())
+
+    def test_mouse_selects_peak_and_drags_fwhm_cursor(self):
+        wavelength = np.linspace(1500, 1600, 401)
+        transmission = 1 - 0.2 * np.exp(-((wavelength - 1550) / 2) ** 2)
+        data = pd.DataFrame({
+            'wavelength_nm': wavelength, 'T_linear': transmission,
+            'nu_Hz': analysis.wl2nu(wavelength),
+        })
+        self.window.T = data
+        self.window.retrieve_params()
+        self.window.sync_peak_context()
+        widget = self.window.plot_widget_operation
+        widget.plot(wavelength, transmission)
+        peaks, properties = analysis.find_peaks_for_FSR(data, **self.window.Param_find_peaks)
+        self.window.show_peak_overlay(data, peaks, properties)
+        self.window.show()
+        self.app.processEvents()
+        widget.setXRange(1546, 1556, padding=0)
+        widget.setYRange(0.75, 1.05, padding=0)
+        self.app.processEvents()
+
+        view = widget.getViewBox()
+        viewport = widget.viewport()
+        peak = widget.mapFromScene(view.mapViewToScene(QPointF(1550, 0.8)))
+        QTest.mouseClick(viewport, Qt.LeftButton, Qt.NoModifier, peak, 20)
+        self.app.processEvents()
+        self.assertEqual(self.window.selected_peak_index, 200)
+        cursor = self.window.peak_cursor_items[2]
+        initial = cursor.value()
+        start = widget.mapFromScene(view.mapViewToScene(QPointF(initial, 0.9)))
+        end = QPoint(start.x() - 30, start.y())
+        QTest.mouseMove(viewport, start, 20)
+        self.app.processEvents()
+        QTest.mousePress(viewport, Qt.LeftButton, Qt.NoModifier, start, 20)
+        move = QMouseEvent(QEvent.MouseMove, QPointF(end), QPointF(viewport.mapToGlobal(end)),
+                           Qt.NoButton, Qt.LeftButton, Qt.NoModifier)
+        QApplication.sendEvent(viewport, move)
+        self.app.processEvents()
+        QTest.mouseRelease(viewport, Qt.LeftButton, Qt.NoModifier, end, 20)
+        self.app.processEvents()
+        self.assertLess(cursor.value(), initial)
+        self.assertIn(200, self.window.manual_fwhm_bounds)
 
     def test_analysis_error_shows_only_new_figures_and_full_traceback(self):
         old_figure = plt.figure()

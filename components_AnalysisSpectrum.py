@@ -25,117 +25,15 @@ from F_save import F_save
 import scipy.constants as const
 
 C = const.c  # Speed of light in vacuum (m/s)
-'''
-def wl2nu(wl):
-    """ from wavelength scale nm to frequency scale hz
-        Comments by Yijun
-        Args:
-           * **wl** (float): in nm
-           
-        Ref:
-            
-    """
-    return C/(wl*1e-9)# in hz
-def nu2wl(nu):
-    """ from freq scale hz to wavelegnth scale nm
-        Comments by Yijun
-        Args:
-           * **nu** (float): in hz
-        Ref:
-            
-    """
-    return C/(nu)*1e9# in nm
-def dB2linear(signal_dB):
-    """ from dB to linear scale
-        Comments by Yijun
-        Args:
-           * **signal_dB** (float): in dB
-        Ref:
-    """
-    signal_linear =10**(signal_dB/10)# the signal_dB is transfered to linear signal
-    return signal_linear
 
-def linear2dB(signal_linear):
-    """ from linear to dB scale
-        Comments by Yijun
-        Args:
-           * **signal_linear** (float): in linear unit
-        Ref:
-    """
-    signal_dB =10*np.log10(signal_linear)# the signal_dB is transfered to linear signal
-    return signal_dB 
-
-def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None,
-              skiprows=0)->pd.DataFrame:
-    """ 
-    Load data from file with flexible column name handling.
-    
-    Keyword Args:
-       * **file_name** : the file name of the measurement.
-       * **wl_name** : the column name that indicates wavelength in nm.
-       * **data_name** : the column name that indicates the transmission in dB.
-       * **range_wl** : a list or tuple specifying the wavelength range to filter [min_wavelength, max_wavelength].
-       * **skiprows** : number of initial lines to skip; the next line contains column names.
-    
-    Returns:
-       * **T** : pandas dataframe: wavelength_nm, nu_Hz, T_dB, T_linear.
-    """
-    
-    # Load the data
-    try:
-        # Attempt to load the data with auto-detection of the separator
-        data = pd.read_csv(file_name,engine='python',sep=None,skiprows=skiprows)
-    # Handle exceptions
-    except Exception as e:
-        print(f"Error reading file {file_name}: {e}")
-
-
-    # Try with the primary column names
-    try:
-        if wl_name in data.columns and data_name in data.columns:
-            wavelength = data[wl_name].values
-            transmission = data[data_name].values
-        else:
-            raise ValueError
-
-    # Fallback to alternative column names if not found
-    except ValueError:
-        alt_wl_name, alt_data_name = 'L', '1'
-        if alt_wl_name in data.columns and alt_data_name in data.columns:
-            wavelength = data[alt_wl_name].values
-            transmission = data[alt_data_name].values
-        else:
-            raise ValueError("Column names not found in data file.")
-
-    # Apply the range filter if specified
-    if range_wl is not None:
-        mask = (wavelength >= range_wl[0]) & (wavelength <= range_wl[1])
-        wavelength = wavelength[mask]
-        transmission = transmission[mask]
-
-    # Calculate derived data
-    nu = wl2nu(wavelength)
-    transmission_linear = dB2linear(transmission)
-
-    # Create and return DataFrame
-    T = pd.DataFrame({
-        'wavelength_nm': wavelength,
-        'T_dB': transmission,
-        'T_linear': transmission_linear,
-        'nu_Hz': nu
-    })
-
-    return T
-'''
 
 def find_peaks_for_FSR(T, ax=None, **param_find_peaks)->tuple:
     """ find peaks for FSR and pepareing for resonances fitting 
         Keyword Args:
-           * **frequency_Hz** : the frequency in Hz (converted from wavelength).
-           * **transmission_linear** : the linear transmission data.
-           * **???** : ???
+           * **T** : pandas DataFrame containing the transmission data, with columns 'wavelength_nm', 'nu_Hz', and 'T_linear'.
+           * **param_find_peaks** : dict containing parameters for scipy.signal.find_peaks.
         Returns:
-           * **peaks** : pandas dataframe. idx_peaks: the index the peaks in input frequency_Hz.
+           * **peaks** : pandas dataframe. idx_peaks: the index the peaks in input DataFrame T.
            * **properties_peaks** : dict. properties of the peaks found by scipy.signal.find_peaks.
              FWHM_width_heights, FWHM_left_ips and FWHM_right_ips describe the
              half-prominence line in transmission and sample-index coordinates.
@@ -329,13 +227,69 @@ def validate_rel_fwhm(value):
     return value
 
 
-def resonances_fitting(wavelength_nm,transmission_linear,
-                       idx_res,
-                       properties_peaks,
-                       peak_range_nm = 1,A_margin = 0.02,Rel_FWHM = 0.99
+def fwhm_bounds_from_peak(fwhm_peak, rel_fwhm) -> tuple:
+    """Calculate frequency-width bounds from the detected peak width."""
+    width = abs(float(fwhm_peak))
+    relative = validate_rel_fwhm(rel_fwhm)
+    if not np.isfinite(width) or width <= 0:
+        raise ValueError("The detected FWHM must be finite and greater than 0.")
+    return width * (1 - relative), width * (1 + relative)
+
+
+def validate_fwhm_bounds(bounds) -> tuple:
+    """Validate a pair of frequency-width bounds in Hz."""
+    lower, upper = bounds
+    lower, upper = float(lower), float(upper)
+    if not np.isfinite(lower) or not np.isfinite(upper) or not 0 <= lower < upper:
+        raise ValueError("FWHM bounds must be finite and satisfy 0 <= lower < upper.")
+    return lower, upper
+
+
+def fwhm_width_to_wavelength_edges(center_frequency, width) -> tuple:
+    """Map a frequency FWHM in Hz to its shorter and longer wavelengths in nm."""
+    center, width = float(center_frequency), float(width)
+    if not np.isfinite(center) or not np.isfinite(width) or center <= 0 or not 0 <= width < 2 * center:
+        raise ValueError("FWHM and center frequency cannot be converted to wavelengths.")
+    return float(nu2wl(center + width / 2)), float(nu2wl(center - width / 2))
+
+
+def fwhm_width_from_long_wavelength(center_frequency, wavelength) -> float:
+    """Recover a frequency FWHM in Hz from the long-wavelength edge in nm."""
+    center, wavelength = float(center_frequency), float(wavelength)
+    if not np.isfinite(center) or center <= 0 or not np.isfinite(wavelength) or wavelength <= 0:
+        raise ValueError("FWHM cursor wavelength and center frequency must be positive and finite.")
+    center_wavelength = float(nu2wl(center))
+    if wavelength < center_wavelength:
+        raise ValueError("FWHM cursor must be on the long-wavelength side of the peak.")
+    width = 2 * center * (wavelength - center_wavelength) / wavelength
+    return float(width)
+
+
+def resonances_fitting(wavelength_nm: np.ndarray, transmission_linear: np.ndarray,
+                       idx_res: np.ndarray,
+                       properties_peaks: dict,
+                       peak_range_nm: float = 1, A_margin: float = 0.02, Rel_FWHM: float = 0.99,
+                       fwhm_bounds_overrides = None
                        ):
-    """Fit each resonance, with FWHM bounds at FWHM_peak * (1 +/- Rel_FWHM)."""
+    """Fit resonances using default or per-sample-index frequency FWHM bounds (from fwhm_bounds_overrides).
+    
+    Args:
+        wavelength_nm (np.ndarray): Array of wavelengths in nm.
+        transmission_linear (np.ndarray): Array of linear transmission values.
+        idx_res (list or np.ndarray): Indices of the resonances to fit.
+        properties_peaks (dict): Dictionary containing peak properties from scipy.signal.find_peaks.
+        peak_range_nm (float, optional): Range around each peak to consider for fitting. Default is 1 nm.
+        A_margin (float, optional): Margin for the amplitude bounds. Default is 0.02.
+        Rel_FWHM (float, optional): Relative FWHM for default bounds. Default is 0.99. if fwhm_bounds_overrides is not provided, this value will be used to determine the FWHM bounds.
+        fwhm_bounds_overrides (dict, optional): Dictionary of per-peak FWHM bounds overrides.
+
+    Returns:
+        dict: Dictionary containing fitted resonance parameters, including 'nu_peak', 'Q', 'FWHM', 'A', 'R_ext', 'idx_peak', 'nu_samples', 'T_f_Lorentzian', and 'failed' lists.
+    """
     rel_FWHM = validate_rel_fwhm(Rel_FWHM)
+    if fwhm_bounds_overrides is not None:
+        for bounds in fwhm_bounds_overrides.values():
+            validate_fwhm_bounds(bounds) # 修改成正确的 a pair of frequency-width bounds in Hz.
     nu_peak_list = []
     Q_list = []
     FWHM_list = []
@@ -362,11 +316,14 @@ def resonances_fitting(wavelength_nm,transmission_linear,
             FWHM_peak = np.abs(properties_peaks['FWHM'][i])
             rel_A = param_rel['Rel_A']
             rel_Peak = param_rel['Rel_Peak']
-
+            # Future: May need to adjust these bounds based on the specific peak and its prominence
             A_upper = 1-transmission_linear[idx] + A_margin
             A_lower = 0.01
-            FWHM_lower = FWHM_peak * (1 - rel_FWHM)
-            FWHM_upper = FWHM_peak * (1 + rel_FWHM)
+            # if there is override for this peak, use it for FWHM bounds
+            if fwhm_bounds_overrides is not None and idx in fwhm_bounds_overrides:
+                FWHM_lower, FWHM_upper = validate_fwhm_bounds(fwhm_bounds_overrides[idx])
+            else: # use default FWHM bounds based on the peak and relative FWHM
+                FWHM_lower, FWHM_upper = fwhm_bounds_from_peak(FWHM_peak, rel_FWHM)
 
             bounds  = F_Bounds_SingleLorentzian(
                 A_lower=A_lower,A_upper=A_upper,
@@ -461,68 +418,9 @@ def RemoveOffset_Savgol(wavelength, transmission, idx, window_length=101, polyor
     return transmission_corrected, offset
     # return transmission_filtered
 
-#def fit_fsr_polynomial(nu_res,FSR,order=2,nb_sigma=1):
-    """ Fit a polynomial to the FSR data within several-sigma for a more accurate FSR calculation.
-        This allow to filter out multiple modes perturbation.
-        Comments by Yijun
-        Args:
-            * **nu_res** (): the resonance frequencies.
-            * **FSR** (): free spectrum range.
-            * **order** (): order of FSR fitting, 2 default, 3 maximum.
-            * **nb_sigma** (float): number of sigma. the FSR inside the mean around this number of sigma will be included for fitting
-           
-        Outputs:
-            * **f_FSR** (?): the function of FSR fitting.
-    """
-    sigma = np.std(FSR)
-    idx_3sigma = np.where((FSR < FSR.mean() + nb_sigma * sigma) & (FSR > FSR.mean() - nb_sigma * sigma))# idx_3sigma is a tuple
-    idx_3sigma = idx_3sigma[0]
-
-    f_FSR_poly = np.polyfit(nu_res[idx_3sigma], FSR[idx_3sigma],order)
-    f_FSR = np.poly1d(f_FSR_poly)
-    return f_FSR
 
 
-#def fit_fsr_polynomial_robust(nu_res, FSR, order=2, nb_sigma=1, max_iter=5):
-    """ 
-    Fit a polynomial to the FSR data while filtering out outliers.
-    This allows ignoring multiple modes perturbations (bossing).
-    
-    Args:
-       * nu_res (array-like): The resonance frequencies.
-       * FSR (array-like): Free spectral range values.
-       * order (int): Order of the polynomial for FSR fitting (default 2).
-       * nb_sigma (float): Sigma threshold for outlier removal (default 1).
-       * max_iter (int): Maximum number of iterations for robust fitting (default 5).
-       
-    Returns:
-       * f_FSR (np.poly1d): The robust polynomial fit function for FSR.
-       * inliers (array-like): Boolean array indicating inliers used in the final fit.
-    """
-    inliers = np.ones(len(FSR), dtype=bool)  # Start with all points as inliers
-    
-    for _ in range(max_iter):
-        # Perform polynomial fit on the inliers
-        f_FSR_poly = np.polyfit(nu_res[inliers], FSR[inliers], order)
-        f_FSR = np.poly1d(f_FSR_poly)
-        
-        # Calculate residuals and standard deviation of residuals
-        residuals = FSR - f_FSR(nu_res)
-        sigma_residuals = np.std(residuals[inliers])
-        
-        # Update inliers: keep points within nb_sigma * sigma_residuals
-        new_inliers = np.abs(residuals) < nb_sigma * sigma_residuals
-        
-        # Stop if inliers don't change
-        if np.array_equal(new_inliers, inliers):
-            break
-        inliers = new_inliers
 
-    # Final polynomial fit using refined inliers
-    f_FSR_poly = np.polyfit(nu_res[inliers], FSR[inliers], order)
-    f_FSR = np.poly1d(f_FSR_poly)
-    
-    return f_FSR, inliers
 
 from F_fit_fsr_polynomial_robust import fit_fsr_polynomial_robust
 
@@ -603,14 +501,14 @@ def calculate_finesse(FSR_peak_array, FWHM_array):
 
 
 
-def analysis_main(T,
-                  Param_RingResonator,
-                  Param_find_peaks,
-                  Param_Savgol_fitting,
-                  Param_peaks_fitting,
-                  Param_FSR_fitting,
-                  Param_loss_calcul,
-                  Param_phase_matching,
+def analysis_main(T: pd.DataFrame,
+                  Param_RingResonator: dict,
+                  Param_find_peaks: dict,
+                  Param_Savgol_fitting: dict,
+                  Param_peaks_fitting: dict,
+                  Param_FSR_fitting: dict,
+                  Param_loss_calcul: dict,
+                  Param_phase_matching: dict,
                   isSave=False,
                   save_dir=None,
                   save_status=None,
@@ -625,32 +523,27 @@ def analysis_main(T,
                   Title = 'Not defined',
                   Addition_dict:dict = {},
                   peak_result_callback=None,
+                  fwhm_bounds_overrides=None,
                   **kwargs):
     """ Do analysis.
         Comments by Yijun
         Args:
-           * **T** (pd.dataframe): 
+           * **T** (pd.DataFrame): pandas DataFrame containing the transmission data, with columns 'wavelength_nm', 'nu_Hz', and 'T_linear'.
            * **peak_result_callback** (callable, optional): receives T, peaks and
              properties immediately after peak detection, before subsequent analysis.
-           * **?** (): 
-           * **?** (): 
-           * **kwargs** ():other 
+           * **fwhm_bounds_overrides**: per-peak sample-index FWHM bounds in Hz, chosen manually.
+           * **Param_RingResonator** (dict): parameters for the ring resonator.
+           * **Param_find_peaks** (dict): parameters for peak finding.
+           * **Param_Savgol_fitting** (dict): parameters for Savgol fitting.
+           * **Param_peaks_fitting** (dict): parameters for peak fitting.
+           * **Param_FSR_fitting** (dict): parameters for FSR fitting.
+           * **Param_loss_calcul** (dict): parameters for loss calculation.
+           * **Param_phase_matching** (dict): parameters for phase matching.
+           * **kwargs** (): other keyword arguments.
            
         Outputs:
            * **?** (?): ?
     """
-    # FileName = 'test_offsetremoved.csv'
-    # FileName = 'test_W800_R100um_G600.csv'
-    # # FileName = 'W1100_R100um_G500nm.txt'
-    # # FileName = 'W1100_R100um_G600nm.txt'
-    # # FileName = '/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_thesis/Analysis_Transmission_GraphicInterface/Transmission mesurements/test_W1100_R100um_G400_BeforeAnnealing.csv'
-    # FileName = '/Users/yangyijun/Library/CloudStorage/OneDrive-Personal/1A_thesis/Analysis_Transmission_GraphicInterface/Transmission mesurements/test_W1100_R100um_G400_AfterAnnealing.csv'
-    # # T = load_data(FileName,range_wl=[1500,1574])
-    # try:
-    #     T = load_data(FileName,range_wl=Param_RingResonator['range_wl'],wl_name='wavelength',data_name='transmission')
-    # except ValueError:
-    #     # T = load_data(FileName,range_wl=[1500,1609],wl_name='L',data_name='1')
-    #     print('Loading data fails!\n')
             
 
     Diamter = Param_RingResonator['diameter']
@@ -824,6 +717,7 @@ def analysis_main(T,
                                                             transmission_corrected,
                                                             peaks['idx_peaks'],
                                                             properties_peaks,
+                                                            fwhm_bounds_overrides=fwhm_bounds_overrides,
                                                             **Param_peaks_fitting)
     
     Fig_peak_fitting,(ax_pf1,ax_pf2) = plt.subplots(nrows = 2,ncols=1,sharex=True,sharey = False,figsize = [10,6])

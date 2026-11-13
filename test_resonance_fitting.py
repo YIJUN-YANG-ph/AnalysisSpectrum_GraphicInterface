@@ -94,6 +94,65 @@ class ResonanceFittingAlignmentTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Rel_FWHM'):
                     analysis.resonances_fitting(None, None, [], {}, Rel_FWHM=value)
 
+    def test_wavelength_cursor_conversion_round_trips_frequency_widths(self):
+        center = analysis.wl2nu(1550.0)
+        for width in (0, 1e9, 20e9, 2e12):
+            with self.subTest(width=width):
+                short, long = analysis.fwhm_width_to_wavelength_edges(center, width)
+                self.assertLessEqual(short, analysis.nu2wl(center))
+                self.assertGreaterEqual(long, analysis.nu2wl(center))
+                np.testing.assert_allclose(
+                    analysis.fwhm_width_from_long_wavelength(center, long),
+                    width, rtol=1e-10, atol=0.1)
+                np.testing.assert_allclose(long - short,
+                                           analysis.nu2wl(center - width / 2)
+                                           - analysis.nu2wl(center + width / 2))
+        with self.assertRaises(ValueError):
+            analysis.fwhm_width_to_wavelength_edges(center, 2 * center)
+        with self.assertRaises(ValueError):
+            analysis.fwhm_width_from_long_wavelength(center, 1500)
+
+    def test_manual_bounds_override_only_the_matching_peak(self):
+        wavelength = pd.Series(np.linspace(1500, 1560, 301))
+        transmission = pd.Series(np.full(len(wavelength), 0.9))
+        properties = {'prominences': np.ones(2), 'FWHM': np.array([2e9, 4e9])}
+        with patch('F_LorentzianModel.f_locatized', side_effect=self.fake_fit(None)) as fit:
+            analysis.resonances_fitting(
+                wavelength, transmission, [100, 200], properties, Rel_FWHM=0.25,
+                fwhm_bounds_overrides={100: (0.4e9, 3e9)})
+        first_lower, first_upper = fit.call_args_list[0].args[2]
+        second_lower, second_upper = fit.call_args_list[1].args[2]
+        np.testing.assert_allclose([first_lower[1], first_upper[1]], [0.4e9, 3e9])
+        np.testing.assert_allclose([second_lower[1], second_upper[1]], [3e9, 5e9])
+
+    def test_invalid_manual_bounds_are_rejected_before_fitting(self):
+        for bounds in ((-1, 2), (1, 1), (2, 1), (0, float('inf')), (float('nan'), 2)):
+            with self.subTest(bounds=bounds):
+                with self.assertRaisesRegex(ValueError, 'FWHM bounds'):
+                    analysis.resonances_fitting(None, None, [], {}, fwhm_bounds_overrides={0: bounds})
+
+    def test_analysis_passes_manual_bounds_to_resonance_fitting(self):
+        wavelength = pd.Series(np.linspace(1500, 1560, 2201))
+        transmission = pd.Series(np.full(len(wavelength), 0.9))
+        indices = np.arange(50, 2151, 50)
+        properties = {'prominences': np.ones(len(indices)),
+                      'FWHM': np.full(len(indices), 1e9)}
+        data = pd.DataFrame({'wavelength_nm': wavelength, 'T_linear': transmission,
+                             'nu_Hz': analysis.wl2nu(wavelength)})
+        overrides = {50: (1e8, 2e9)}
+        with patch.object(analysis, 'find_peaks_for_FSR',
+                          return_value=(pd.DataFrame({'idx_peaks': indices}), properties)):
+            with patch.object(analysis, 'RemoveOffset_Savgol',
+                              return_value=(transmission, np.ones(len(wavelength)))):
+                with patch.object(analysis, 'resonances_fitting',
+                                  side_effect=RuntimeError('stop at fitting')) as fit:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        with self.assertRaisesRegex(RuntimeError, 'stop at fitting'):
+                            analysis.analysis_main(
+                                data, {'diameter': 200}, {}, {}, {}, {}, {},
+                                {'pump wl': 1550}, fwhm_bounds_overrides=overrides)
+        self.assertIs(fit.call_args.kwargs['fwhm_bounds_overrides'], overrides)
+
     def test_analysis_q_plot_uses_only_successful_peak_positions(self):
         wavelength = pd.Series(np.linspace(1500, 1560, 2201))
         transmission = pd.Series(np.full(len(wavelength), 0.9))

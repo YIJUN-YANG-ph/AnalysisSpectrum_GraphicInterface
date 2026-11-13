@@ -64,6 +64,10 @@ from components_AnalysisSpectrum import (nu2wl,wl2nu,
                                          load_data,
                                          find_peaks_for_FSR,
                                          validate_rel_fwhm,
+                                         fwhm_bounds_from_peak,
+                                         validate_fwhm_bounds,
+                                         fwhm_width_to_wavelength_edges,
+                                         fwhm_width_from_long_wavelength,
                                          analysis_main)
 C = 299792458 #m / s
 
@@ -115,6 +119,11 @@ class MainWindow(QMainWindow):
         for idx, (name, button) in enumerate(self.plot_buttons.items()):
             button.clicked.connect(self.show_plot)
             analysis_buttons.addWidget(button, idx // 2, idx % 2)
+        # Reset selected FWHM bounds button is added below, 恢复所选峰的默认边界
+        self.button_reset_peak_bounds = QPushButton("Reset selected FWHM bounds")
+        self.button_reset_peak_bounds.clicked.connect(self.reset_selected_peak_bounds)
+        analysis_buttons.addWidget(self.button_reset_peak_bounds, 2, 0, 1, 2)
+        
         controls_layout.addLayout(analysis_buttons)
 
         # Save/load parameters row
@@ -216,7 +225,18 @@ class MainWindow(QMainWindow):
         self.plot_widget_operation.setLabel('left', 'data (a.u.)')
         self.plot_widget_operation.addLegend(labelTextColor='k', labelTextSize='10pt')
         self.peak_overlay_items = []
+        # Some additional attributes manual FWHM bounds management
+        self.peak_cursor_items = []
+        self.manual_fwhm_bounds = {} # important
+        self.peak_context_data = None
+        self.peak_context_params = None
+        self.selected_peak_index = None
+        self.peak_result_data = None
+        self.peak_result_indices = np.array([], dtype=int)
+        self.peak_result_properties = None
+        self.updating_peak_cursors = False
         plots_layout.addWidget(self.plot_widget_operation)
+        plots_layout.addWidget(QLabel("Click a resonance marker to edit its FWHM bounds."))
 
         main_layout.addWidget(plots_panel, 1)
 
@@ -243,6 +263,7 @@ class MainWindow(QMainWindow):
             existing_figures = set(plt.get_fignums())
             try:
                 self.retrieve_params()
+                self.sync_peak_context()
                 self.clear_peak_overlay()
                 is_save = self.checkbox_is_save.isChecked()
                 save_dir = self.get_default_results_dir()
@@ -259,6 +280,7 @@ class MainWindow(QMainWindow):
                               save_dir=save_dir,
                               save_status=save_status,
                               peak_result_callback=self.show_peak_overlay,
+                              fwhm_bounds_overrides=self.manual_fwhm_bounds,
                               )
             except Exception: # if error occurs during analysis, the error will be logged and existing figures will still be displayed
                 error = traceback.format_exc()
@@ -294,6 +316,7 @@ class MainWindow(QMainWindow):
             print('All the data has been deleted, yeah!!!!!!!!!\n')
             self.T = {}
             self.measurement_data = {}
+            self.reset_peak_context()
             # Clear any existing plot 
             self.clear_peak_overlay()
             self.plot_widget_operation.clear()
@@ -310,14 +333,60 @@ class MainWindow(QMainWindow):
         self.results_output.verticalScrollBar().setValue(self.results_output.verticalScrollBar().maximum())
 
     def clear_peak_overlay(self):
+        """Clear all peak overlay items (usually the markers, cursors, and peak detection items etc.) and reset related attributes."""
+        self.clear_peak_cursors()
         for item in self.peak_overlay_items:
             self.plot_widget_operation.removeItem(item)
         self.peak_overlay_items.clear()
+        self.peak_result_data = None
+        self.peak_result_indices = np.array([], dtype=int)
+        self.peak_result_properties = None
+
+    def clear_peak_cursors(self):
+        """Clear all cursor items."""
+        for item in self.peak_cursor_items:
+            self.plot_widget_operation.removeItem(item)
+        self.peak_cursor_items.clear()
+
+    def reset_peak_context(self):
+        """Reset the peak context, including manual FWHM bounds, selected peak, and peak result data."""
+        if self.manual_fwhm_bounds:
+            self.log_message("Manual FWHM bounds cleared because the data or peak finding settings changed.")
+        self.manual_fwhm_bounds.clear()
+        self.peak_context_data = None
+        self.peak_context_params = None
+        self.selected_peak_index = None
+        self.peak_result_data = None
+        self.peak_result_indices = np.array([], dtype=int)
+        self.peak_result_properties = None
+        self.clear_peak_cursors()
+
+    def sync_peak_context(self):
+        """Reset the peak context with the current data and parameters."""
+        data = self.T if isinstance(self.T, pd.DataFrame) else None
+        if self.peak_context_data is not None and (
+            data is None or not data.equals(self.peak_context_data)
+            or self.Param_find_peaks != self.peak_context_params
+        ):
+            self.reset_peak_context()
+        if data is not None:
+            self.peak_context_data = data.copy(deep=True)
+            self.peak_context_params = self.Param_find_peaks.copy()
 
     def show_peak_overlay(self, data, peaks, properties):
+        """Show the peak overlay items on the plot_widget_operation plot."""
         self.clear_peak_overlay()
-        indices = peaks['idx_peaks'].to_numpy()
+        indices = peaks['idx_peaks'].to_numpy(dtype=int)
+        self.peak_result_data = data
+        self.peak_result_indices = indices
+        self.peak_result_properties = properties
+        missing = set(self.manual_fwhm_bounds) - set(indices)
+        for idx in missing:
+            del self.manual_fwhm_bounds[idx]
+        if missing:
+            self.log_message(f"Manual FWHM bounds cleared for {len(missing)} peaks no longer detected.")
         if len(indices) == 0:
+            self.selected_peak_index = None
             return
 
         wavelengths = data['wavelength_nm'].to_numpy()
@@ -330,7 +399,8 @@ class MainWindow(QMainWindow):
 
         resonance = pg.PlotDataItem(
             peak_wavelengths, peak_values, pen=None, symbol='x',
-            symbolPen=pg.mkPen('b', width=2), symbolSize=9, name='resonance')
+            symbolPen=pg.mkPen('b', width=2), symbolSize=12, name='resonance')
+        resonance.sigPointsClicked.connect(self.peak_clicked)
         prominence = pg.PlotDataItem(
             np.repeat(peak_wavelengths, 2),
             np.column_stack((peak_values + properties['prominences'], peak_values)).ravel(),
@@ -343,6 +413,89 @@ class MainWindow(QMainWindow):
         self.peak_overlay_items = [resonance, prominence, fwhm]
         for item in self.peak_overlay_items:
             self.plot_widget_operation.addItem(item)
+        if self.selected_peak_index in indices:
+            self.select_peak(self.selected_peak_index)
+        else:
+            self.selected_peak_index = None
+
+    def peak_clicked(self, item, points, event):
+        """Handle the event when a peak marker is clicked."""
+        if points:
+            self.select_peak(int(self.peak_result_indices[points[0].index()]))
+
+    def reset_selected_peak_bounds(self):
+        """Reset the FWHM bounds of the currently selected peak to the default Rel_FWHM values. 
+        Manual changes are also cleared."""
+        if self.selected_peak_index is None or self.peak_result_data is None:
+            self.log_message("Select a resonance before resetting its FWHM bounds.")
+            return
+        self.manual_fwhm_bounds.pop(self.selected_peak_index, None)
+        self.select_peak(self.selected_peak_index)
+        self.log_message("Selected peak FWHM bounds reset to Rel_FWHM defaults.")
+
+    def select_peak(self, index):
+        """Select a peak by its index and display its FWHM bounds (lower and upper edges) on the plot."""
+        self.clear_peak_cursors()
+        self.selected_peak_index = index
+        position = int(np.flatnonzero(self.peak_result_indices == index)[0])
+        center = float(self.peak_result_data['nu_Hz'].iloc[index])
+        try:
+            if index in self.manual_fwhm_bounds:
+                lower, upper = validate_fwhm_bounds(self.manual_fwhm_bounds[index])
+            else:
+                lower, upper = fwhm_bounds_from_peak(
+                    self.peak_result_properties['FWHM'][position],
+                    validate_rel_fwhm(self.param_fields['Param_peaks_fitting_Rel_FWHM'].text()))
+            edges = [fwhm_width_to_wavelength_edges(center, width) for width in (lower, upper)]
+        except ValueError as e:
+            self.log_message(f"Cannot display FWHM bounds for peak {index}: {e}")
+            return
+
+        for name, color, edge in zip(('lower', 'upper'), ('g', 'm'), edges):
+            cursor = pg.InfiniteLine(pos=edge[1], movable=True, pen=pg.mkPen(color, width=2),
+                                     label='', labelOpts={'color': color, 'position': 0.9})
+            mirror = pg.InfiniteLine(pos=edge[0], movable=False,
+                                     pen=pg.mkPen(color, width=1, style=QtCore.Qt.DashLine))
+            self.peak_cursor_items.extend((cursor, mirror))
+            self.plot_widget_operation.addItem(cursor, ignoreBounds=True)
+            self.plot_widget_operation.addItem(mirror, ignoreBounds=True)
+            cursor.label.format = f'{name}: {edge[1] - edge[0]:.6g} nm'
+            cursor.label.setText(cursor.label.format)
+        self.set_peak_cursor_limits(center)
+        for cursor in self.peak_cursor_items[::2]:
+            cursor.sigPositionChanged.connect(self.peak_cursor_moved)
+        self.log_message(f"Peak {index} selected; drag the lower and upper FWHM cursors.")
+
+    def set_peak_cursor_limits(self, center):
+
+        lower, upper = self.peak_cursor_items[::2]
+        center_wavelength = float(nu2wl(center))
+        lower.setBounds([center_wavelength, np.nextafter(upper.value(), -np.inf)])
+        upper.setBounds([np.nextafter(lower.value(), np.inf), None])
+
+    def peak_cursor_moved(self):
+        if self.updating_peak_cursors:
+            return
+        self.updating_peak_cursors = True
+        try:
+            index = self.selected_peak_index
+            center = float(self.peak_result_data['nu_Hz'].iloc[index])
+            cursors = self.peak_cursor_items[::2]
+            widths = validate_fwhm_bounds(
+                tuple(fwhm_width_from_long_wavelength(center, cursor.value()) for cursor in cursors))
+            for name, cursor, mirror, width in zip(
+                ('lower', 'upper'), cursors, self.peak_cursor_items[1::2], widths
+            ):
+                short, long = fwhm_width_to_wavelength_edges(center, width)
+                mirror.setValue(short)
+                cursor.label.format = f'{name}: {long - short:.6g} nm'
+                cursor.label.setText(cursor.label.format)
+            self.manual_fwhm_bounds[index] = widths
+            self.set_peak_cursor_limits(center)
+        except ValueError as e:
+            self.log_message(f"Invalid FWHM cursor position: {e}")
+        finally:
+            self.updating_peak_cursors = False
     
     def add_param_group(self, parent_layout, title, param_name, default_values):
         """Create a titled parameter group with labelled inputs."""
@@ -357,7 +510,7 @@ class MainWindow(QMainWindow):
         parent_layout.addWidget(group)
             
             
-    def retrieve_params(self):
+    def retrieve_params(self)->dict:
         """ 
         To retrieve the input value from a QLineEdit field, you can use the text() method,
         which returns the text in the field as a string. To convert it to a different data type, like int or float, 
@@ -489,6 +642,8 @@ class MainWindow(QMainWindow):
                 return
             T_s.append(T)   
 
+        self.reset_peak_context()
+        self.clear_peak_overlay()
         # Clear any existing plot
         self.plot_widget.clear()
         # plot all dataframe T in T_s on the same plot
@@ -619,6 +774,7 @@ class MainWindow(QMainWindow):
 
                 result_offsetRM_s.append(result)# append the linear result 
             # Clear any existing plot and plot the result within the selected range
+            self.sync_peak_context()
             self.clear_peak_overlay()
             self.plot_widget_operation.clear()
             #pg.PlotWidget() can not handle pd.dataframe, so it has to be convert to np.array
@@ -639,12 +795,14 @@ class MainWindow(QMainWindow):
                 # Create a new DataFrame with the filtered data and reset index
                 self.T = self.measurement_data[mask].copy().reset_index(drop=True)
                 # Clear any existing plot and plot the result within the selected range
+                self.sync_peak_context()
                 self.clear_peak_overlay()
                 self.plot_widget_operation.clear()
                 #pg.PlotWidget() can not handle pd.dataframe, so it has to be convert to np.array
                 self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), self.T['T_linear'].to_numpy(), pen=pg.mkPen(color=(160, 32, 240), width=2))
             else:
                 self.T = self.measurement_data.copy().reset_index(drop=True)
+                self.sync_peak_context()
                 self.clear_peak_overlay()
                 self.plot_widget_operation.plot(self.T['wavelength_nm'].to_numpy(), self.T['T_linear'].to_numpy(), pen=pg.mkPen(color=(160, 32, 240), width=2))
 

@@ -6,7 +6,7 @@ from yaml import warnings
 from F_ConvertUnits import wl2nu, nu2wl, dB2linear
 
 def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None,
-              f_convert:callable = None)->pd.DataFrame:
+              f_convert:callable = None, skiprows=0)->pd.DataFrame:
     """ 
     Load data from file with flexible column name handling.
     
@@ -16,6 +16,7 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
        * **data_name** : the column name that indicates the transmission in dB.
        * **range_wl** : a list or tuple specifying the wavelength range to filter [min_wavelength, max_wavelength].
        * **f_convert** : a callable function to convert x-axis data if needed.
+       * **skiprows** : number of initial lines to skip; the next line contains column names.
     
     Returns:
        * **T** : pandas dataframe: (wavelength_nm), nu_Hz, T_dB, T_linear.
@@ -24,11 +25,10 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
     # Load the data
     try:
         # Attempt to load the data with auto-detection of the separator
-        data = pd.read_csv(file_name,engine='python',sep=None)
+        data = pd.read_csv(file_name,engine='python',sep=None,skiprows=skiprows)
     # Handle exceptions
     except Exception as e:
         #print a warning and re-raise the exception
-
         warnings(f"Error reading file {file_name}: {e}")
         # print(f"Error reading file {file_name}: {e}")
         raise
@@ -118,5 +118,3 @@ if __name__ == "__main__":
     file_name = r'D75-G400-W1549.524-2.5-3.9.txt'
     T = load_data(file_name, wl_name='frequency', data_name='power1',
                   f_convert=lambda nu, Pe: Heterodyne(nu*1e9, Pe))
-
-

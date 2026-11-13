@@ -41,6 +41,7 @@ if __name__ == "__main__":
 import sys
 import os
 import ast
+import traceback
 
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -137,6 +138,11 @@ class MainWindow(QMainWindow):
         param_container_layout.setContentsMargins(0, 0, 0, 0)
         param_container_layout.setSpacing(8)
 
+        self.add_param_group(param_container_layout, "Read csv", "Param_Read_csv", {
+            'wl_name': 'wavelength',
+            'data_name': 'transmission',
+            'skiprows': 0
+        })
         self.add_param_group(param_container_layout, "Ring Resonator", "Param_RingResonator", {
             'diameter': 200,
             'width': 1100,
@@ -226,22 +232,38 @@ class MainWindow(QMainWindow):
             '''
             find resonaces
             '''
-            self.retrieve_params()
-            is_save = self.checkbox_is_save.isChecked()
-            save_dir = self.get_default_results_dir()
-            save_status = {}
-            self.Fig_FSR,self.Fig_peak_fitting,self.Fig_resonance,self.fig_loss = analysis_main(self.T,
-                          self.Param_RingResonator,
-                          self.Param_find_peaks,
-                          self.Param_Savgol_fitting,
-                          self.Param_peaks_fitting,
-                          self.Param_FSR_fitting,
-                          self.Param_loss_calcul,
-                          self.Param_phase_matching,
-                          isSave=is_save,
-                          save_dir=save_dir,
-                          save_status=save_status,
-                          )
+            existing_figures = set(plt.get_fignums())
+            try:
+                self.retrieve_params()
+                is_save = self.checkbox_is_save.isChecked()
+                save_dir = self.get_default_results_dir()
+                save_status = {}
+                self.Fig_FSR,self.Fig_peak_fitting,self.Fig_resonance,self.fig_loss = analysis_main(self.T,
+                              self.Param_RingResonator,
+                              self.Param_find_peaks,
+                              self.Param_Savgol_fitting,
+                              self.Param_peaks_fitting,
+                              self.Param_FSR_fitting,
+                              self.Param_loss_calcul,
+                              self.Param_phase_matching,
+                              isSave=is_save,
+                              save_dir=save_dir,
+                              save_status=save_status,
+                              )
+            except Exception:
+                error = traceback.format_exc()
+                print(error, file=sys.stderr, end='')
+                self.log_message("Analysis failed:\n" + error)
+                for number in set(plt.get_fignums()) - existing_figures:
+                    try:
+                        figure = plt.figure(number)
+                        figure.show()
+                        figure.canvas.draw_idle()
+                    except Exception:
+                        display_error = traceback.format_exc()
+                        print(display_error, file=sys.stderr, end='')
+                        self.log_message(f"Could not display figure {number}:\n" + display_error)
+                return
             self.log_message("Analysis completed.")
             if is_save:
                 if save_status.get('saved'):
@@ -310,7 +332,24 @@ class MainWindow(QMainWindow):
                 except (ValueError, SyntaxError):
                     # Handle errors if the input format is incorrect
                     params[name] = None  # Assign None or a default value if the conversion fails
-        
+
+        params['Param_Read_csv_wl_name'] = self.param_fields[
+            'Param_Read_csv_wl_name'].text().strip()
+        params['Param_Read_csv_data_name'] = self.param_fields[
+            'Param_Read_csv_data_name'].text().strip()
+        try:
+            params['Param_Read_csv_skiprows'] = int(
+                self.param_fields['Param_Read_csv_skiprows'].text())
+        except ValueError as e:
+            raise ValueError("Read csv skiprows must be a non-negative integer.") from e
+        if params['Param_Read_csv_skiprows'] < 0:
+            raise ValueError("Read csv skiprows must be a non-negative integer.")
+
+        self.Param_Read_csv = {
+            'wl_name': params['Param_Read_csv_wl_name'],
+            'data_name': params['Param_Read_csv_data_name'],
+            'skiprows': params['Param_Read_csv_skiprows'],
+        }
         self.Param_RingResonator = {'diameter': params['Param_RingResonator_diameter'], 
                                'width': params['Param_RingResonator_width'],
                                'range_wl': params['Param_RingResonator_range_wl']}
@@ -366,6 +405,11 @@ class MainWindow(QMainWindow):
             self.log_message("No file selected.")
             return
         self.loaded_file_path = file_names[0]
+        try:
+            self.retrieve_params()
+        except ValueError as e:
+            self.log_message(str(e))
+            return
         T_s = []
         # if file_name:
         for file_name in file_names:
@@ -384,10 +428,16 @@ class MainWindow(QMainWindow):
             self.measurement_data = pd.DataFrame(data = {'wavelength':wavelength,'transmission':transmission})    
             '''
             try:
-                T = load_data(file_name,range_wl=None,wl_name='wavelength',data_name='transmission')
-            except ValueError:
-                # T = load_data(FileName,range_wl=[1500,1609],wl_name='L',data_name='1')
-                print('Loading data fails!\n')
+                T = load_data(
+                    file_name,
+                    range_wl=None,
+                    wl_name=self.Param_Read_csv['wl_name'],
+                    data_name=self.Param_Read_csv['data_name'],
+                    skiprows=self.Param_Read_csv['skiprows'],
+                )
+            except (OSError, ValueError, TypeError) as e:
+                self.log_message(f"Loading data failed for {file_base_name}: {e}")
+                return
             T_s.append(T)   
 
         # Clear any existing plot
@@ -415,11 +465,18 @@ class MainWindow(QMainWindow):
     
             if file_name:
                 try:
-                    T = load_data(file_name,range_wl=None,wl_name='wavelength',data_name='transmission')
-                except ValueError:
-                    # T = load_data(FileName,range_wl=[1500,1609],wl_name='L',data_name='1')
-                    print('Loading data fails!\n')    
-                    # Plot the offset in grey
+                    self.retrieve_params()
+                    T = load_data(
+                        file_name,
+                        range_wl=None,
+                        wl_name=self.Param_Read_csv['wl_name'],
+                        data_name=self.Param_Read_csv['data_name'],
+                        skiprows=self.Param_Read_csv['skiprows'],
+                    )
+                except (OSError, ValueError, TypeError) as e:
+                    self.log_message(f"Loading offset data failed: {e}")
+                    return
+                # Plot the offset in grey
                 self.plot_widget.plot(T['wavelength_nm'],T['T_dB'], pen=pg.mkPen(color='gray', width=2))
                 self.offset_data = T
     def save_current_params(self):
@@ -561,4 +618,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
-

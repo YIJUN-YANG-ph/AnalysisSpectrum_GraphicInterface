@@ -64,7 +64,8 @@ def linear2dB(signal_linear):
     signal_dB =10*np.log10(signal_linear)# the signal_dB is transfered to linear signal
     return signal_dB 
 
-def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None)->pd.DataFrame:
+def load_data(file_name, wl_name='wavelength', data_name='transmission', range_wl=None,
+              skiprows=0)->pd.DataFrame:
     """ 
     Load data from file with flexible column name handling.
     
@@ -73,6 +74,7 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
        * **wl_name** : the column name that indicates wavelength in nm.
        * **data_name** : the column name that indicates the transmission in dB.
        * **range_wl** : a list or tuple specifying the wavelength range to filter [min_wavelength, max_wavelength].
+       * **skiprows** : number of initial lines to skip; the next line contains column names.
     
     Returns:
        * **T** : pandas dataframe: wavelength_nm, nu_Hz, T_dB, T_linear.
@@ -81,7 +83,7 @@ def load_data(file_name, wl_name='wavelength', data_name='transmission', range_w
     # Load the data
     try:
         # Attempt to load the data with auto-detection of the separator
-        data = pd.read_csv(file_name,engine='python',sep=None)
+        data = pd.read_csv(file_name,engine='python',sep=None,skiprows=skiprows)
     # Handle exceptions
     except Exception as e:
         print(f"Error reading file {file_name}: {e}")

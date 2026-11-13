@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -41,6 +42,46 @@ class AnalysisErrorDisplayTests(unittest.TestCase):
                 widget.clear()
                 self.assertEqual(widget.getAxis('bottom').labelText, 'wavelength (nm)')
                 self.assertEqual(widget.getAxis('left').labelText, ylabel)
+
+    def test_relative_fwhm_is_saved_loaded_and_passed_to_analysis(self):
+        field = self.window.param_fields['Param_peaks_fitting_Rel_FWHM']
+        self.assertEqual(field.text(), '0.99')
+        field.setText('0.25')
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.join(directory, 'parameters.txt')
+            with patch.object(gui.QFileDialog, 'getSaveFileName', return_value=(filename, '')):
+                self.window.save_current_params()
+            with open(filename) as saved:
+                self.assertIn('Param_peaks_fitting_Rel_FWHM: 0.25\n', saved.read())
+            field.setText('0.5')
+            with patch.object(gui.QFileDialog, 'getOpenFileName', return_value=(filename, '')):
+                self.window.load_params_from_file()
+            self.assertEqual(field.text(), '0.25')
+
+        with patch.object(gui, 'analysis_main', return_value=tuple(object() for _ in range(4))) as run:
+            self.window.plot_buttons['Show Figure 1'].click()
+        self.assertEqual(run.call_args.args[4]['Rel_FWHM'], 0.25)
+
+    def test_old_parameter_file_preserves_default_relative_fwhm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.join(directory, 'old_parameters.txt')
+            with open(filename, 'w') as saved:
+                saved.write('Param_peaks_fitting_A_margin: 0.03\n')
+            with patch.object(gui.QFileDialog, 'getOpenFileName', return_value=(filename, '')):
+                self.window.load_params_from_file()
+        self.window.retrieve_params()
+        self.assertEqual(self.window.Param_peaks_fitting['Rel_FWHM'], 0.99)
+        self.assertEqual(self.window.Param_peaks_fitting['A_margin'], 0.03)
+
+    def test_invalid_relative_fwhm_prevents_analysis(self):
+        for value in ('0', '-0.1', '1.1', 'nan', 'inf', 'invalid'):
+            with self.subTest(value=value):
+                self.window.param_fields['Param_peaks_fitting_Rel_FWHM'].setText(value)
+                with patch.object(gui, 'analysis_main') as run:
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        self.window.plot_buttons['Show Figure 1'].click()
+                run.assert_not_called()
+                self.assertIn('ValueError: Rel_FWHM', self.window.results_output.toPlainText())
 
     def test_analyze_overlays_peak_geometry_and_replaces_it_on_reanalysis(self):
         wavelength = np.linspace(1500, 1600, 401)

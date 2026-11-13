@@ -63,6 +63,7 @@ from components_AnalysisSpectrum import (nu2wl,wl2nu,
                                          dB2linear, linear2dB, 
                                          load_data,
                                          find_peaks_for_FSR,
+                                         validate_rel_fwhm,
                                          analysis_main)
 C = 299792458 #m / s
 
@@ -161,7 +162,8 @@ class MainWindow(QMainWindow):
         })
         self.add_param_group(param_container_layout, "Peak Fitting", "Param_peaks_fitting", {
             'peak_range_nm': 1,
-            'A_margin': 0.02
+            'A_margin': 0.02,
+            'Rel_FWHM': 0.99
         })
         self.add_param_group(param_container_layout, "FSR Fitting", "Param_FSR_fitting", {
             'fitting_order': 2,
@@ -404,8 +406,11 @@ class MainWindow(QMainWindow):
         self.Param_Savgol_fitting = {'window_length':params['Param_Savgol_fitting_window_length'],
                         'points_to_remove':params['Param_Savgol_fitting_points_to_remove'],
                         'polyorder':params['Param_Savgol_fitting_polyorder']}
+        params['Param_peaks_fitting_Rel_FWHM'] = validate_rel_fwhm(
+            self.param_fields['Param_peaks_fitting_Rel_FWHM'].text())
         self.Param_peaks_fitting = {'peak_range_nm':params['Param_peaks_fitting_peak_range_nm'],
-                               'A_margin':params['Param_peaks_fitting_A_margin']}
+                               'A_margin':params['Param_peaks_fitting_A_margin'],
+                               'Rel_FWHM':params['Param_peaks_fitting_Rel_FWHM']}
         self.Param_FSR_fitting = {'fitting_order':params['Param_FSR_fitting_fitting_order'],
                              'nb_sigma':params['Param_FSR_fitting_nb_sigma'],}
         self.Param_loss_calcul = {'wl_critical':params['Param_loss_calcul_wl_critical']}

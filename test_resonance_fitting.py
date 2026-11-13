@@ -15,6 +15,7 @@ import pandas as pd
 from PyQt5.QtWidgets import QApplication
 
 import components_AnalysisSpectrum as analysis
+import F_Bounds
 
 
 class ResonanceFittingAlignmentTests(unittest.TestCase):
@@ -56,6 +57,42 @@ class ResonanceFittingAlignmentTests(unittest.TestCase):
                 expected = np.delete(indices, failed) if failed is not None else indices
                 np.testing.assert_array_equal(params['idx_peak'].to_numpy(), expected)
                 self.assertEqual(len(params['Q_f']), len(expected))
+
+    def test_fwhm_bounds_are_calculated_before_calling_bounds_helper(self):
+        wavelength = pd.Series(np.linspace(1500, 1560, 301))
+        transmission = pd.Series(np.full(len(wavelength), 0.9))
+        indices = np.array([100, 200])
+        properties = {'prominences': np.ones(2), 'FWHM': np.array([-2e9, 4e9])}
+
+        with patch.object(F_Bounds, 'F_Bounds_SingleLorentzian',
+                          wraps=F_Bounds.F_Bounds_SingleLorentzian) as make_bounds:
+            with patch('F_LorentzianModel.f_locatized', side_effect=self.fake_fit(None)) as fit:
+                analysis.resonances_fitting(wavelength, transmission, indices, properties)
+
+        self.assertEqual(make_bounds.call_count, 2)
+        for call, fit_call, peak_width in zip(make_bounds.call_args_list, fit.call_args_list, (2e9, 4e9)):
+            np.testing.assert_allclose(call.kwargs['FWHM_lower'], peak_width * 0.01)
+            np.testing.assert_allclose(call.kwargs['FWHM_upper'], peak_width * 1.99)
+            self.assertNotIn('FWHM0', call.kwargs)
+            self.assertNotIn('Rel_FWHM', call.kwargs)
+            lower, upper = fit_call.args[2]
+            np.testing.assert_allclose([lower[1], upper[1]], [peak_width * 0.01, peak_width * 1.99])
+
+    def test_custom_relative_fwhm_controls_fitting_bounds(self):
+        wavelength = pd.Series(np.linspace(1500, 1560, 301))
+        transmission = pd.Series(np.full(len(wavelength), 0.9))
+        properties = {'prominences': np.array([0.1]), 'FWHM': np.array([2e9])}
+        with patch('F_LorentzianModel.f_locatized', side_effect=self.fake_fit(None)) as fit:
+            analysis.resonances_fitting(
+                wavelength, transmission, [100], properties, Rel_FWHM=0.25)
+        lower, upper = fit.call_args.args[2]
+        np.testing.assert_allclose([lower[1], upper[1]], [1.5e9, 2.5e9])
+
+    def test_invalid_relative_fwhm_is_rejected_before_fitting(self):
+        for value in (0, -0.1, 1.1, float('nan'), float('inf')):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, 'Rel_FWHM'):
+                    analysis.resonances_fitting(None, None, [], {}, Rel_FWHM=value)
 
     def test_analysis_q_plot_uses_only_successful_peak_positions(self):
         wavelength = pd.Series(np.linspace(1500, 1560, 2201))

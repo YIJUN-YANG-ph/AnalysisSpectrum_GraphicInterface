@@ -288,42 +288,54 @@ def calcul_dispersion(wavelength_nm,FSR_Hz,length_m,order=2):
                                'GVD_D':GVD_D,
                                'GVD_beta_2':GVD_beta_2})
     return GVD
-
+# abandoned 
 ##############  try to define a localized fitting function ###############
-def f_locatized(nu_res,signal_res,bounds):
-    """ A localized fitting fucntion. The localized grating response is fitted by polynomial function
-        The resonance responce is fitted by Lorentzian fucntion
-        Comments by Yijun
-        Args:
-           * **nu_res,signal_res** (array): the mesurements around a given resonance nu
-           * **bounds** (array): bounds for Lorentzian fitting
-        Ref:
+# def f_locatized(nu_res,signal_res,bounds):
+#     """ A localized fitting fucntion. The localized grating response is fitted by polynomial function
+#         The resonance responce is fitted by Lorentzian fucntion
+#         Comments by Yijun
+#         Args:
+#            * **nu_res,signal_res** (array): the mesurements around a given resonance nu
+#            * **bounds** (array): bounds for Lorentzian fitting
+#         Ref:
             
-    """
-    f_coupler_poly = np.polyfit(nu_res,signal_res,1)
-    f_coupler = np.poly1d(f_coupler_poly)
+#     """
+#     f_coupler_poly = np.polyfit(nu_res,signal_res,1)
+#     f_coupler = np.poly1d(f_coupler_poly)
     
-    def f_func_Lorentzian(lbd, A, HWHM, lbd_res):
-        """ Lorentzian fitting function for degenerate resonance
-            Comments by Yijun wl or freq. don't matter
-            Args:
-               * **lbd** (float): wavelength in nm
-               * **A** (float): parameter to find extinction ratio
-               * **HWHM** (float): half width at half maximum
-               * **lbd_res** (float): resonance frequency
-            Ref:
-                https://doi.org/10.1364/OE.381224
-        """
-        return -A / (1+((lbd-lbd_res)/HWHM)**2) + f_coupler(lbd)
-    popt, pcov = curve_fit(f_func_Lorentzian,nu_res,signal_res, bounds=bounds)
-    return popt, pcov, f_func_Lorentzian,f_coupler
+#     def f_func_Lorentzian(lbd, A, HWHM, lbd_res):
+#         """ Lorentzian fitting function for degenerate resonance
+#             Comments by Yijun wl or freq. don't matter
+#             Args:
+#                * **lbd** (float): wavelength in nm
+#                * **A** (float): parameter to find extinction ratio
+#                * **HWHM** (float): half width at half maximum
+#                * **lbd_res** (float): resonance frequency
+#             Ref:
+#                 https://doi.org/10.1364/OE.381224
+#         """
+#         return -A / (1+((lbd-lbd_res)/HWHM)**2) + f_coupler(lbd)
+#     popt, pcov = curve_fit(f_func_Lorentzian,nu_res,signal_res, bounds=bounds)
+#     return popt, pcov, f_func_Lorentzian,f_coupler
+
+def validate_rel_fwhm(value):
+    """Return a finite relative FWHM range in (0, 1]."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError) as e:
+        raise ValueError("Rel_FWHM must be a number greater than 0 and at most 1.") from e
+    if not np.isfinite(value) or not 0 < value <= 1:
+        raise ValueError("Rel_FWHM must be a number greater than 0 and at most 1.")
+    return value
+
 
 def resonances_fitting(wavelength_nm,transmission_linear,
                        idx_res,
                        properties_peaks,
-                       peak_range_nm = 1,A_margin = 0.02
+                       peak_range_nm = 1,A_margin = 0.02,Rel_FWHM = 0.99
                        ):
-    """Lorentzian fit for each resonance; continues past failures so one bad peak doesn't block the run."""
+    """Fit each resonance, with FWHM bounds at FWHM_peak * (1 +/- Rel_FWHM)."""
+    rel_FWHM = validate_rel_fwhm(Rel_FWHM)
     nu_peak_list = []
     Q_list = []
     FWHM_list = []
@@ -344,21 +356,21 @@ def resonances_fitting(wavelength_nm,transmission_linear,
             transmission_res = transmission_linear[idx_res_local]
 
             from F_Bounds import F_Bounds_SingleLorentzian
-            param_rel = {'Rel_FWHM':0.99,
-                         'Rel_A':0.8,
+            param_rel = {'Rel_A':0.8,
                          'Rel_Peak':0.2,}
             prominence_peak = properties_peaks['prominences'][i]
             FWHM_peak = np.abs(properties_peaks['FWHM'][i])
             rel_A = param_rel['Rel_A']
-            rel_FWHM = param_rel['Rel_FWHM']
             rel_Peak = param_rel['Rel_Peak']
 
             A_upper = 1-transmission_linear[idx] + A_margin
             A_lower = 0.01
+            FWHM_lower = FWHM_peak * (1 - rel_FWHM)
+            FWHM_upper = FWHM_peak * (1 + rel_FWHM)
 
             bounds  = F_Bounds_SingleLorentzian(
                 A_lower=A_lower,A_upper=A_upper,
-                FWHM0=FWHM_peak,Rel_FWHM=rel_FWHM,
+                FWHM_lower=FWHM_lower,FWHM_upper=FWHM_upper,
                 Peak0=nu[idx],Rel_Peak =rel_Peak
             )
 
